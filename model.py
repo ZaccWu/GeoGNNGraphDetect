@@ -31,11 +31,12 @@ class MultiRelationalGNN(MessagePassing):
         return out
 
     ## TODO: 修改这个函数，使得考虑图的几何性质，包括时间衰减、空间多尺度等距，加上不同relationship有不同信息
-    def message_backup(self, x_j, edge_attr, coordinates_i, coordinates_j):
+    def message_backup(self, x_j, edge_time_attr, coordinates_i, coordinates_j):
         # 计算关系权重w_ij和坐标差异f(coordinate_i, coordinate_j)
-        t_ij = edge_attr  # 时间戳t_ij
+        t_ij = edge_time_attr  # 时间戳t_ij
         w_ij = 1 / (1 + self.alpha * (t_ij - t_ij.min()))
-        r_ij = self.compute_relation_weight(edge_attr)  # 计算关系类型权重
+        r_ij = self.compute_relation_weight(edge_time_attr)  # 计算关系类型权重
+
         coord_diff = coordinates_i - coordinates_j  # 坐标差异
         dist = torch.norm(coord_diff, p=2, dim=1)  # 欧几里得距离
 
