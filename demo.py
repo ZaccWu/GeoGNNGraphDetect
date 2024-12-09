@@ -53,7 +53,6 @@ def train(data, model):
         model.train()
         optimizer.zero_grad()
         out = model(data.x, data.edge_index, data.edge_attr, data.edge_time, data.pos)
-        #out = model(data.x, data.edge_index)
         loss = F.cross_entropy(out, data.y)
         loss.backward()
         optimizer.step()
@@ -64,7 +63,6 @@ def train(data, model):
 def test(model):
     model.eval()
     out = model(data.x, data.edge_index, data.edge_attr, data.edge_time, data.pos)
-    #out = model(data.x, data.edge_index)
     _, pred = out.max(dim=1)
     acc = (pred == data.y).sum().item() / data.num_nodes
     print(f'Accuracy: {acc:.4f}')
