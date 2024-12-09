@@ -15,7 +15,7 @@ class SimulationData():
         super(SimulationData, self).__init__()
         self.num_users = 1000
         self.num_features = 4
-        self.edge_types = 3
+        self.edge_types = 5
 
     def gen_simulation_data(self):
         node_features = torch.rand((self.num_users, self.num_features), dtype=torch.float)  # 随机特征
@@ -28,20 +28,32 @@ class SimulationData():
             edge_attrs.append(edge_attr)
         # concat all types of edges
         edge_index, edge_attr = torch.cat(edges, dim=1), torch.cat(edge_attrs, dim=0)
+        # 生成边时间
+        edge_time = torch.randint(0, 100, (edge_index.shape[1],))  # Edge timestamps (e.g., formation time)
+        # Random node positions (spatial features)
+        pos = torch.randn(self.num_users, 3)  # 3D positions
+
         # 3. 生成标签：用户兴趣类别（假设5类）
         labels = torch.randint(0, 5, (self.num_users,), dtype=torch.long)
 
         # 构建图数据对象
-        data = Data(x=node_features, edge_index=edge_index, edge_attr=edge_attr, y=labels)
-        edge_types_tensor = torch.randint(0, self.edge_types, (edge_index.size(1),), dtype=torch.long)  # 边的类型
+        data = Data(
+            x=node_features,
+            edge_index=edge_index,
+            edge_attr=edge_attr,
+            edge_time=edge_time,
+            pos=pos,
+            y=labels)
         return data
+
 
 def train(data, model):
     optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
     for epoch in range(1, 51):
         model.train()
         optimizer.zero_grad()
-        out = model(data.x, data.edge_index, data.edge_attr)
+        out = model(data.x, data.edge_index, data.edge_attr, data.edge_time, data.pos)
+        #out = model(data.x, data.edge_index)
         loss = F.cross_entropy(out, data.y)
         loss.backward()
         optimizer.step()
@@ -51,7 +63,8 @@ def train(data, model):
 
 def test(model):
     model.eval()
-    out = model(data.x, data.edge_index, data.edge_attr)
+    out = model(data.x, data.edge_index, data.edge_attr, data.edge_time, data.pos)
+    #out = model(data.x, data.edge_index)
     _, pred = out.max(dim=1)
     acc = (pred == data.y).sum().item() / data.num_nodes
     print(f'Accuracy: {acc:.4f}')
@@ -64,10 +77,8 @@ if __name__ == "__main__":
 
     SimData = SimulationData()
     data =  SimData.gen_simulation_data().to(device)
-    model = MultiRelationalGNN(
-        in_channels=SimData.num_features,
-        hidden_channels=16,
-        out_channels=5,
+    model = MultiRelationGNN(
+        node_dim=SimData.num_features,
         num_relations=SimData.edge_types
     ).to(device)
 
