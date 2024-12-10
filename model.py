@@ -21,7 +21,7 @@ class MultiRelationGNN(MessagePassing):
         self.relation_mlps = torch.nn.ModuleList(
             [nn.Linear(h_dim * 2, h_dim) for _ in range(num_relations)]
         )
-        self.mlp = nn.Linear(h_dim, 5) # target num=5
+        self.mlp = nn.Linear(h_dim, 1) # binary classification
 
     def forward(self, x, edge_index, edge_type, edge_time, pos):
         # x (num_nodes, node_feature_dim): Node features
