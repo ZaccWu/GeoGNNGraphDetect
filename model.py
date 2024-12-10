@@ -33,14 +33,22 @@ class MultiRelationGNN(MessagePassing):
         row, col = edge_index  # row: source nodes, col: target nodes
         node_emb0 = self.field_mlp(x)
 
+        if pos is None:
+            pos_k, pos_l = None, None
+        else:
+            pos_k, pos_l = pos[row], pos[col]
+
         return self.propagate(edge_index=edge_index, x=node_emb0,
-                              pos_k=pos[row], pos_l=pos[col], edge_type=edge_type, edge_time=edge_time)
+                              pos_k=pos_k, pos_l=pos_l, edge_type=edge_type, edge_time=edge_time)
 
     def message(self, x_j, x_i, pos_k, pos_l, edge_type, edge_time):
+        if pos_k is None:
+            w_sym = torch.zeros_like(edge_time)
+        else:
+            # calculate the weights
+            spatial_dist = torch.norm(pos_l - pos_k, dim=-1) # pos_x: (num_edges, pos_dim), spatial_dist: (num_edges)
+            w_sym = torch.exp(-self.alpha * spatial_dist) # (num_edges)
 
-        # calculate the weights
-        spatial_dist = torch.norm(pos_l - pos_k, dim=-1) # pos_x: (num_edges, pos_dim), spatial_dist: (num_edges)
-        w_sym = torch.exp(-self.alpha * spatial_dist) # (num_edges)
         time_diff = torch.abs(edge_time)  # Use edge timestamps directly
         w_asym = torch.exp(-self.beta * time_diff) # (num_edges)
         w = self.lambda_sym * w_sym + (1 - self.lambda_sym) * w_asym # Combine weights using lambda_sym

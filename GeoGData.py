@@ -1,7 +1,7 @@
 import torch
 from torch_geometric.data import Data
 import numpy as np
-
+import pandas as pd
 
 class SimulationData():
     def __init__(self):
@@ -29,7 +29,6 @@ class SimulationData():
 
         # 3. 生成标签：用户兴趣类别（假设3类）
         labels = torch.randint(0, self.target_types, (self.num_users,), dtype=torch.long)
-
         # 构建图数据对象
         data = Data(
             x=node_features,
@@ -41,9 +40,28 @@ class SimulationData():
         return data
 
 
-
-
 class FinDGraphData():
     def __init__(self):
         super(FinDGraphData, self).__init__()
-        data_raw = np.load('/data/DGraphFin/dgraphfin.npz')
+        data_raw = np.load('./data/DGraphFin/dgraphfin.npz')
+        self.num_users = data_raw['x'].shape[0]
+        self.num_features = data_raw['x'].shape[-1]
+        self.edge_types = len(pd.Series(data_raw['edge_type']).value_counts())
+        self.target_types = 2
+
+        self.data = Data(
+            x=torch.FloatTensor(data_raw['x']),
+            edge_index=torch.LongTensor(data_raw['edge_index']).T, # -> (2, num_edges)
+            edge_type=torch.LongTensor(data_raw['edge_type']), # (num_edges,)
+            edge_time=torch.FloatTensor(data_raw['edge_timestamp']), # (num_edges,)
+            pos=None,
+            y=torch.LongTensor(data_raw['y']),
+            train_mask=torch.LongTensor(data_raw['train_mask']),
+            val_mask=torch.LongTensor(data_raw['valid_mask']),
+            test_mask=torch.LongTensor(data_raw['test_mask'])
+        )
+        del data_raw
+
+
+
+
