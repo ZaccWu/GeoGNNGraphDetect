@@ -16,6 +16,7 @@ class SimulationData():
         self.num_users = 1000
         self.num_features = 4
         self.edge_types = 5
+        self.target_types = 3
 
     def gen_simulation_data(self):
         node_features = torch.rand((self.num_users, self.num_features), dtype=torch.float)  # 随机特征
@@ -33,8 +34,8 @@ class SimulationData():
         # Random node positions (spatial features)
         pos = torch.randn(self.num_users, 3)  # 3D positions
 
-        # 3. 生成标签：用户兴趣类别（假设5类）
-        labels = torch.randint(0, 5, (self.num_users,), dtype=torch.long)
+        # 3. 生成标签：用户兴趣类别（假设3类）
+        labels = torch.randint(0, self.target_types, (self.num_users,), dtype=torch.long)
 
         # 构建图数据对象
         data = Data(
@@ -76,7 +77,8 @@ if __name__ == "__main__":
     SimData = SimulationData()
     data =  SimData.gen_simulation_data().to(device)
     model = MultiRelationGNN(
-        node_dim=SimData.num_features,
+        in_dim=SimData.num_features,
+        out_dim=SimData.target_types,
         num_relations=SimData.edge_types
     ).to(device)
 
