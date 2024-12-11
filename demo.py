@@ -18,7 +18,6 @@ def contrastive_loss(target, pred_score, m=5):
     Rs = torch.mean(pred_score)
     delta = torch.std(pred_score)
     dev_score = (pred_score - Rs)/(delta + 1e-10)
-    #print(dev_score.device, pred_score.device,target.device, Rs.device, delta.device)
     cont_score = torch.max(torch.zeros(pred_score.shape).to(device), m-dev_score)
     loss = dev_score[(1-target).nonzero()].sum()+cont_score[target.nonzero()].sum()
     return loss
@@ -58,7 +57,7 @@ def main(data, model):
 
             print('Val Results: ')
             print(classification_report(np.array(val_tar_list), np.array(val_rec_list), digits=4))
-            print("Val AUC: ", roc_auc_score(np.array(val_tar_list), np.array(val_rec_list)))
+            print("Val AUC: ", roc_auc_score(np.array(val_tar_list), np.array(val_pred_score_list)))
 
 
     # model test
@@ -74,7 +73,7 @@ def main(data, model):
 
     print('Test Results: ')
     print(classification_report(np.array(ts_tar_list), np.array(ts_rec_list), digits=4))
-    print("Test AUC: ", roc_auc_score(np.array(ts_tar_list), np.array(ts_rec_list)))
+    print("Test AUC: ", roc_auc_score(np.array(ts_tar_list), np.array(ts_pred_score_list)))
 
 
 if __name__ == "__main__":
