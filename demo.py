@@ -32,7 +32,7 @@ def transfer_pred(pred_score, threshold):
 def main(data, model):
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
-    for epoch in range(1, 100):
+    for epoch in range(1, 300):
         model.train()
         optimizer.zero_grad()
         out = model(data.x, data.edge_index, data.edge_type, data.edge_time, data.pos)

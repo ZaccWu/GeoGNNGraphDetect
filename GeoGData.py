@@ -47,7 +47,7 @@ class FinDGraphData():
         self.num_users = data_raw['x'].shape[0]
         self.num_features = data_raw['x'].shape[-1]
         self.edge_types = len(pd.Series(data_raw['edge_type']).value_counts())
-        self.target_types = 2
+        self.target_types = 1
 
         self.data = Data(
             x=torch.FloatTensor(data_raw['x']),
