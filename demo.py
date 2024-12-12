@@ -5,6 +5,7 @@ from model import *
 from GeoGData import *
 from sklearn.metrics import classification_report
 from sklearn.metrics import roc_auc_score
+from torch_geometric.data import Data, DataLoader
 
 def set_seed(seed):
 	np.random.seed(seed)
@@ -20,7 +21,7 @@ def contrastive_loss(target, pred_score, m=5):
     dev_score = (pred_score - Rs)/(delta + 1e-10)
     cont_score = torch.max(torch.zeros(pred_score.shape).to(device), m-dev_score)
     loss = dev_score[(1-target).nonzero()].sum()+cont_score[target.nonzero()].sum()
-    return loss
+    return loss # sum sample loss
 
 def transfer_pred(pred_score, threshold):
     pred = pred_score.clone()
@@ -30,19 +31,31 @@ def transfer_pred(pred_score, threshold):
 
 def main(data, model):
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-
-    for epoch in range(1, 300):
+    batchsize = 65536
+    for epoch in range(1, 100):
         model.train()
-        optimizer.zero_grad()
-        out = model(data.x, data.edge_index, data.edge_type, data.edge_time, data.pos)
-        tr_pred, tr_tar = out[data.train_mask].squeeze(-1), data.y[data.train_mask]
-        loss = contrastive_loss(tr_tar, tr_pred)
-        loss.backward()
-        optimizer.step()
+        # design for minibatch training
+        tr_tar = data.y[data.train_mask]
+        n_iter = int(len(tr_tar)/batchsize)
+        total_loss = 0
+        for iter in range(n_iter+1):
+            optimizer.zero_grad()
+            out = model(data.x, data.edge_index, data.edge_type, data.edge_time, data.pos)
+            tr_pred = out[data.train_mask].squeeze(-1)
+
+            if (iter+1)*batchsize >= len(tr_tar):
+                tr_pred_batch, tr_tar_batch = tr_pred[iter*batchsize: ], tr_pred[iter*batchsize: ]
+            else:
+                tr_pred_batch, tr_tar_batch = tr_pred[iter*batchsize: (iter+1)*batchsize], tr_tar[iter*batchsize: (iter+1)*batchsize]
+
+            loss = contrastive_loss(tr_tar_batch, tr_pred_batch)
+            loss.backward()
+            optimizer.step()
+            total_loss+=loss
 
         # no batch training
         if epoch % 10 == 0:
-            print(f'Epoch {epoch}, Loss: {loss:.4f}')
+            print(f'Epoch {epoch}, Loss: {total_loss:.4f}')
 
             # model validation
             model.eval()
