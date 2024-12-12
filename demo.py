@@ -40,7 +40,7 @@ def main(data, model):
         total_loss = 0
         for iter in range(n_iter+1):
             optimizer.zero_grad()
-            out = model(data.x, data.edge_index, data.edge_type, data.edge_time, data.pos)
+            out = model(data.x, data.edge_index, data.edge_type, data.edge_time)
             tr_pred = out[data.train_mask].squeeze(-1)
 
             if (iter+1)*batchsize >= len(tr_tar):
@@ -59,7 +59,7 @@ def main(data, model):
 
             # model validation
             model.eval()
-            out = model(data.x, data.edge_index, data.edge_type, data.edge_time, data.pos)
+            out = model(data.x, data.edge_index, data.edge_type, data.edge_time)
             val_pred, val_tar = out[data.val_mask].squeeze(-1), data.y[data.val_mask]
 
             val_r987 = transfer_pred(val_pred, torch.quantile(val_pred, 0.987, dim=None, keepdim=False))
@@ -75,7 +75,7 @@ def main(data, model):
 
     # model test
     model.eval()
-    out = model(data.x, data.edge_index, data.edge_type, data.edge_time, data.pos)
+    out = model(data.x, data.edge_index, data.edge_type, data.edge_time)
     ts_pred, ts_tar = out[data.test_mask].squeeze(-1), data.y[data.test_mask]
 
     ts_r987 = transfer_pred(ts_pred, torch.quantile(ts_pred, 0.987, dim=None, keepdim=False))

@@ -54,7 +54,6 @@ class FinDGraphData():
             edge_index=torch.LongTensor(data_raw['edge_index']).T, # -> (2, num_edges)
             edge_type=torch.LongTensor(data_raw['edge_type']), # (num_edges,)
             edge_time=torch.FloatTensor(data_raw['edge_timestamp']), # (num_edges,)
-            pos=None,
             y=torch.LongTensor(data_raw['y']),
             train_mask=torch.LongTensor(data_raw['train_mask']),
             val_mask=torch.LongTensor(data_raw['valid_mask']),

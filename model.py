@@ -16,35 +16,19 @@ class GeoMRGNNLayer(MessagePassing):
         self.alpha = alpha  # Spatial decay parameter
         self.beta = beta  # Temporal decay parameter
 
-    def forward(self, x_emb, edge_index, edge_type, edge_time, pos):
+    def forward(self, x_emb, edge_index, edge_type, edge_time):
         # x (num_nodes, node_feature_dim): Node features
         # edge_index (2, num_edges):  Edge indices
         # edge_type (num_edges, 1):   Edge type information
         # edge_time (num_edges):      Edge timestamps
         # pos (num_nodes, pos_feature_dim): Node spatial positions
+        return self.propagate(edge_index=edge_index, x=x_emb, edge_type=edge_type, edge_time=edge_time)
 
-        row, col = edge_index  # row: source nodes, col: target nodes
-
-        if pos is None:
-            pos_k, pos_l = None, None
-        else:
-            pos_k, pos_l = pos[row], pos[col]
-
-        return self.propagate(edge_index=edge_index, x=x_emb,
-                              pos_k=pos_k, pos_l=pos_l, edge_type=edge_type, edge_time=edge_time)
-
-    def message(self, x_j, x_i, pos_k, pos_l, edge_type, edge_time):
-        if pos_k is None:
-            w_sym = torch.zeros_like(edge_time)
-        else:
-            # calculate the weights
-            spatial_dist = torch.norm(pos_l - pos_k,
-                                      dim=-1)  # pos_x: (num_edges, pos_dim), spatial_dist: (num_edges)
-            w_sym = torch.exp(-self.alpha * spatial_dist)  # (num_edges)
+    def message(self, x_j, x_i, edge_type, edge_time):
 
         time_diff = torch.abs(edge_time)  # Use edge timestamps directly
         w_asym = torch.exp(-self.beta * time_diff)  # (num_edges)
-        w = self.lambda_sym * w_sym + (1 - self.lambda_sym) * w_asym  # Combine weights using lambda_sym
+        w = self.lambda_sym * w_asym  # Combine weights using lambda_sym
 
         # Relation-specific transformation
         edge_type = edge_type.long()  # Ensure edge_type is long for indexing
@@ -73,10 +57,19 @@ class MultiRelationGNN(nn.Module):
         self.field_mlp = nn.Linear(in_dim, h_dim)
         self.geonn_l1 = GeoMRGNNLayer(h_dim, num_relations, lambda_sym, alpha, beta)
         self.geonn_l2 = GeoMRGNNLayer(h_dim, num_relations, lambda_sym, alpha, beta)
-        self.shared_out_mlp = nn.Sequential(
+        # binary classification with additive model
+        self.out_mlp0 = nn.Sequential(
             nn.Linear(h_dim, out_dim),
             nn.LeakyReLU(),
-        )# binary classification
+        )
+        self.out_mlp1 = nn.Sequential(
+            nn.Linear(h_dim, out_dim),
+            nn.LeakyReLU(),
+        )
+        self.out_mlp2 = nn.Sequential(
+            nn.Linear(h_dim, out_dim),
+            nn.LeakyReLU(),
+        )
 
     def forward(self, x, edge_index, edge_type, edge_time, pos):
         node_emb0 = self.field_mlp(x)
@@ -85,7 +78,7 @@ class MultiRelationGNN(nn.Module):
         node_emb2 = self.geonn_l2(x_emb=node_emb1, edge_index=edge_index, edge_type=edge_type,
                                   edge_time=edge_time, pos=pos)
 
-        out = self.shared_out_mlp(node_emb2) + self.shared_out_mlp(node_emb1) + self.shared_out_mlp(node_emb0)
+        out = self.out_mlp0(node_emb2) + self.out_mlp1(node_emb1) + self.out_mlp2(node_emb0)
         return out
 
 
