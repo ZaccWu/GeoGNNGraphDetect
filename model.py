@@ -5,7 +5,7 @@ from torch_geometric.nn import MessagePassing
 
 
 class GeoMRGNNLayer(MessagePassing):
-    def __init__(self, h_dim, num_relations, lambda_sym, alpha, beta):
+    def __init__(self, h_dim, num_relations, lambda_sym, beta):
         super().__init__()  # 聚合方法
         # Separate MLPs for each relation type
         self.relation_mlps = torch.nn.ModuleList(
@@ -13,7 +13,6 @@ class GeoMRGNNLayer(MessagePassing):
         )
         self.num_relations = num_relations  # Number of relation types
         self.lambda_sym = lambda_sym  # Weight for symmetric part
-        self.alpha = alpha  # Spatial decay parameter
         self.beta = beta  # Temporal decay parameter
 
     def forward(self, x_emb, edge_index, edge_type, edge_time):
@@ -25,9 +24,9 @@ class GeoMRGNNLayer(MessagePassing):
         return self.propagate(edge_index=edge_index, x=x_emb, edge_type=edge_type, edge_time=edge_time)
 
     def message(self, x_j, x_i, edge_type, edge_time):
-        time_diff = torch.abs(edge_time)  # Use edge timestamps directly
-        w_asym = torch.exp(-self.beta * time_diff)  # (num_edges)
-        w = self.lambda_sym * w_asym  # Combine weights using lambda_sym
+        time_recent = edge_time  # Use edge timestamps directly
+
+        w = self.lambda_sym * torch.exp(-self.beta * time_recent)  # (num_edges)
 
         # Relation-specific transformation
         edge_type = edge_type.long()  # Ensure edge_type is long for indexing
@@ -55,17 +54,17 @@ class MultiRelationGNN(nn.Module):
         super().__init__()
         # learnable weights
         self.lambda_sym = nn.Parameter(torch.empty(1, 1))
-        self.alpha = nn.Parameter(torch.empty(1, 1))
+        self.alpha0 = nn.Parameter(torch.empty(1, 1))
+        self.alpha1 = nn.Parameter(torch.empty(1, 1))
+        self.alpha2 = nn.Parameter(torch.empty(1, 1))
         self.beta = nn.Parameter(torch.empty(1, 1))
 
-        nn.init.xavier_normal_(self.lambda_sym)
-        nn.init.xavier_normal_(self.alpha)
-        nn.init.xavier_normal_(self.beta)
+        self.reset_parameters()
 
         # layers
         self.field_mlp = nn.Linear(in_dim, h_dim)
-        self.geonn_l1 = GeoMRGNNLayer(h_dim, num_relations, self.lambda_sym, self.alpha, self.beta)
-        self.geonn_l2 = GeoMRGNNLayer(h_dim, num_relations, self.lambda_sym, self.alpha, self.beta)
+        self.geonn_l1 = GeoMRGNNLayer(h_dim, num_relations, self.lambda_sym, self.beta)
+        self.geonn_l2 = GeoMRGNNLayer(h_dim, num_relations, self.lambda_sym, self.beta)
         # binary classification with additive model
         self.out_mlp0 = nn.Sequential(
             nn.Linear(h_dim, out_dim),
@@ -89,5 +88,12 @@ class MultiRelationGNN(nn.Module):
 
         out = self.out_mlp2(node_emb2) + self.out_mlp1(node_emb1) + self.out_mlp0(node_emb0)
         return out
+
+    def reset_parameters(self):
+        nn.init.xavier_normal_(self.lambda_sym)
+        nn.init.xavier_normal_(self.alpha0)
+        nn.init.xavier_normal_(self.alpha1)
+        nn.init.xavier_normal_(self.alpha2)
+        nn.init.xavier_normal_(self.beta)
 
 

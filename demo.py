@@ -90,6 +90,7 @@ def main(data, model):
 
 
 if __name__ == "__main__":
+    ## TODO: 设置重复试验
     seed = 101
     set_seed(seed)
     device = torch.device('cuda:{}'.format(0) if torch.cuda.is_available() else 'cpu')

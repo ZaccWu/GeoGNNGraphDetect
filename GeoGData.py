@@ -50,6 +50,7 @@ class FinDGraphData():
         self.target_types = 1
 
         time_stamp = data_raw['edge_timestamp']
+        ## TODO: time_stamp可能需要几种Rank的方法，并乘以对应系数
         time_stamp = (time_stamp - time_stamp.min())/(time_stamp.max() - time_stamp.min())
 
         self.data = Data(
