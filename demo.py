@@ -31,7 +31,7 @@ def transfer_pred(pred_score, threshold):
 
 def main(data, model):
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-    batchsize = 65536
+    batchsize = 262144
     for epoch in range(1, 100):
         model.train()
         # design for minibatch training
@@ -92,7 +92,7 @@ def main(data, model):
 if __name__ == "__main__":
     seed = 101
     set_seed(seed)
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    device = torch.device('cuda:{}'.format(0) if torch.cuda.is_available() else 'cpu')
 
     #RunData = SimulationData()
     #data = RunData.gen_simulation_data().to(device)
