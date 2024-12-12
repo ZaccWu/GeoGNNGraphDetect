@@ -49,11 +49,16 @@ class FinDGraphData():
         self.edge_types = len(pd.Series(data_raw['edge_type']).value_counts())
         self.target_types = 1
 
+        time_stamp = data_raw['edge_timestamp']
+        time_stamp = (time_stamp - time_stamp.min())/(time_stamp.max() - time_stamp.min())
+
         self.data = Data(
             x=torch.FloatTensor(data_raw['x']),
             edge_index=torch.LongTensor(data_raw['edge_index']).T, # -> (2, num_edges)
             edge_type=torch.LongTensor(data_raw['edge_type']), # (num_edges,)
-            edge_time=torch.FloatTensor(data_raw['edge_timestamp']), # (num_edges,)
+
+            edge_time=torch.FloatTensor(time_stamp), # (num_edges,)
+
             y=torch.LongTensor(data_raw['y']),
             train_mask=torch.LongTensor(data_raw['train_mask']),
             val_mask=torch.LongTensor(data_raw['valid_mask']),
