@@ -56,7 +56,6 @@ class GeoMRGNNLayer(MessagePassing):
 
             if mask.sum() > 0:  # Only process edges of type r
                 edge_x0 = torch.cat([x_j[mask], x_i[mask]], dim=-1)
-
                 msg_emb[mask] = self.relation_mlps[r](edge_x0)
 
         # out = w.view(-1, 1) * msg_emb
@@ -75,9 +74,7 @@ class MultiRelationGNN(nn.Module):
         self.geonn_l1 = GeoMRGNNLayer(h_dim, num_relations, lambda_sym, alpha, beta)
         self.geonn_l2 = GeoMRGNNLayer(h_dim, num_relations, lambda_sym, alpha, beta)
         self.feature_mlp = nn.Sequential(
-            nn.Linear(h_dim * 2, h_dim),
-            nn.LeakyReLU(),
-            nn.Linear(h_dim, out_dim),
+            nn.Linear(h_dim * 3, out_dim),
             nn.LeakyReLU(),
         )# binary classification
 
@@ -87,7 +84,7 @@ class MultiRelationGNN(nn.Module):
                                   edge_time=edge_time, pos=pos)
         node_emb2 = self.geonn_l2(x_emb=node_emb1, edge_index=edge_index, edge_type=edge_type,
                                   edge_time=edge_time, pos=pos)
-        out = self.feature_mlp(torch.cat([node_emb2, node_emb0], dim=-1))
+        out = self.feature_mlp(torch.cat([node_emb2, node_emb1, node_emb0], dim=-1))
         return out
 
 
