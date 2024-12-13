@@ -2,6 +2,7 @@ import torch
 from torch_geometric.data import Data
 import numpy as np
 import pandas as pd
+from sklearn.preprocessing import KBinsDiscretizer
 
 class SimulationData():
     def __init__(self):
@@ -43,23 +44,27 @@ class SimulationData():
 class FinDGraphData():
     def __init__(self):
         super(FinDGraphData, self).__init__()
-        data_raw = np.load('./data/DGraphFin/dgraphfin.npz')
+        data_raw = np.load('./data/DGraphFin/dgraphfin_processed.npz')
         self.num_users = data_raw['x'].shape[0]
         self.num_features = data_raw['x'].shape[-1]
         self.edge_types = len(pd.Series(data_raw['edge_type']).value_counts())
         self.target_types = 1
 
-        time_stamp = data_raw['edge_timestamp']
-        ## TODO: time_stamp可能需要几种Rank的方法，并乘以对应系数
-        time_stamp = (time_stamp - time_stamp.min())/(time_stamp.max() - time_stamp.min())
+        time_feature = data_raw['edge_timefeature'] # (num_edge, 4)
+        # min_vals, max_vals = time_feature.min(axis=0), time_feature.max(axis=0)  # column-wise min max
+        # range_vals = max_vals - min_vals
+        # range_vals[range_vals == 0] = 1  # avoiding zeros
+        # normalized_time_feature = (time_feature - min_vals) / range_vals
+
+        kbd = KBinsDiscretizer(n_bins=3, encode='onehot', strategy='uniform')
+        onehot_encoded = kbd.fit_transform(time_feature)
+        normalized_time_feature = onehot_encoded.toarray()  # (num_sample, num_features * num_bins)
 
         self.data = Data(
             x=torch.FloatTensor(data_raw['x']),
             edge_index=torch.LongTensor(data_raw['edge_index']).T, # -> (2, num_edges)
             edge_type=torch.LongTensor(data_raw['edge_type']), # (num_edges,)
-
-            edge_time=torch.FloatTensor(time_stamp), # (num_edges,)
-
+            edge_time=torch.FloatTensor(normalized_time_feature), # (num_edges, 4*nbins)
             y=torch.LongTensor(data_raw['y']),
             train_mask=torch.LongTensor(data_raw['train_mask']),
             val_mask=torch.LongTensor(data_raw['valid_mask']),

@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.nn import MessagePassing
 
+BINS = 3
 
 class GeoMRGNNLayer(MessagePassing):
     def __init__(self, h_dim, num_relations, lambda_sym, beta):
@@ -14,19 +15,23 @@ class GeoMRGNNLayer(MessagePassing):
         self.num_relations = num_relations  # Number of relation types
         self.lambda_sym = lambda_sym  # Weight for symmetric part
         self.beta = beta  # Temporal decay parameter
+        ## TODO: found that uniform weights (rather than learnable weights) for beta are better
 
     def forward(self, x_emb, edge_index, edge_type, edge_time):
         # x (num_nodes, node_feature_dim): Node features
         # edge_index (2, num_edges):  Edge indices
         # edge_type (num_edges, 1):   Edge type information
-        # edge_time (num_edges):      Edge timestamps
+        # edge_time (num_edges, num_time_features):      Edge time features
         # pos (num_nodes, pos_feature_dim): Node spatial positions
         return self.propagate(edge_index=edge_index, x=x_emb, edge_type=edge_type, edge_time=edge_time)
 
     def message(self, x_j, x_i, edge_type, edge_time):
-        time_recent = edge_time  # Use edge timestamps directly
+        num_edge_src, tdiff_edge_src = edge_time[:, 0:BINS*1], edge_time[:, BINS*1:BINS*2]
+        num_edge_trg, tdiff_edge_trg = edge_time[:, BINS*2:BINS*3], edge_time[:, BINS*3:BINS*4]
+        logit = torch.matmul(self.beta[0:BINS*1].T, num_edge_src.T)  + torch.matmul(self.beta[BINS*1:BINS*2].T, tdiff_edge_src.T) + torch.matmul(self.beta[BINS*2:BINS*3].T, num_edge_trg.T) + torch.matmul(self.beta[BINS*3:BINS*4].T, tdiff_edge_trg.T)
+        logit = logit.squeeze(0)
 
-        w = self.lambda_sym * torch.exp(-self.beta * time_recent)  # (num_edges)
+        w = self.lambda_sym * torch.exp(-logit)  # (num_edges)
 
         # Relation-specific transformation
         edge_type = edge_type.long()  # Ensure edge_type is long for indexing
@@ -54,10 +59,7 @@ class MultiRelationGNN(nn.Module):
         super().__init__()
         # learnable weights
         self.lambda_sym = nn.Parameter(torch.empty(1, 1))
-        self.alpha0 = nn.Parameter(torch.empty(1, 1))
-        self.alpha1 = nn.Parameter(torch.empty(1, 1))
-        self.alpha2 = nn.Parameter(torch.empty(1, 1))
-        self.beta = nn.Parameter(torch.empty(1, 1))
+        self.beta = nn.Parameter(torch.empty(4*BINS, 1))
 
         self.reset_parameters()
 
@@ -91,9 +93,6 @@ class MultiRelationGNN(nn.Module):
 
     def reset_parameters(self):
         nn.init.xavier_normal_(self.lambda_sym)
-        nn.init.xavier_normal_(self.alpha0)
-        nn.init.xavier_normal_(self.alpha1)
-        nn.init.xavier_normal_(self.alpha2)
         nn.init.xavier_normal_(self.beta)
 
 
