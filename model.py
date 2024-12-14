@@ -6,6 +6,10 @@ from torch_geometric.nn import GATConv
 
 BINS = 3
 
+## TODO 1: args function and repeated experiments
+## TODO 2: compared with benchmarks and ablations
+## TODO 3: explanable
+
 class GeoMRGNNLayer(MessagePassing):
     def __init__(self, h_dim, num_relations, lambda_sym, beta):
         super().__init__()  # 聚合方法
@@ -93,18 +97,24 @@ class MultiRelationGNN(nn.Module):
         )
 
     def forward(self, x, edge_index, edge_type, edge_time):
-        node_emb0 = self.field_mlp(x)
+        '''
+        Construct different dimension featurs:
+        1. node_emb0: raw feature of the focal node (after field transformation)
+        2. node_nei1: aggr of neighbors' raw features (after transformation in gat)
+        3. node_foc1: 1-layer geonn aggr
+        4. node_foc2: 2-layer geonn aggr
+        '''
+        node_focr = self.field_mlp(x)
         node_nei1 = self.gat_conv(x, edge_index)
 
-        node_foc1 = self.geonn_l1(x_emb=node_emb0, edge_index=edge_index, edge_type=edge_type,
+        node_foc1 = self.geonn_l1(x_emb=node_focr, edge_index=edge_index, edge_type=edge_type,
                                   edge_time=edge_time)
-        node_emb1 = self.geonn_l2_1(x_emb=node_emb0, edge_index=edge_index, edge_type=edge_type,
+        node_emb1 = self.geonn_l2_1(x_emb=node_focr, edge_index=edge_index, edge_type=edge_type,
                                   edge_time=edge_time)
         node_foc2 = self.geonn_l2_1(x_emb=node_emb1, edge_index=edge_index, edge_type=edge_type,
                                   edge_time=edge_time)
 
-        #out = self.out_all(torch.cat([node_emb0, node_nei1, node_foc1, node_foc2], dim=-1))
-        out = self.out_mlp1(node_emb0) + self.out_mlp2(node_nei1) + self.out_mlp3(node_foc1) + self.out_mlp4(node_foc2) + self.out_all(torch.cat([node_emb0, node_nei1, node_foc1, node_foc2], dim=-1))
+        out = self.out_mlp1(node_focr) + self.out_mlp2(node_nei1) + self.out_mlp3(node_foc1) + self.out_mlp4(node_foc2) + self.out_all(torch.cat([node_focr, node_nei1, node_foc1, node_foc2], dim=-1))
 
         # TODO: 这里发现（1）GAT （2）用＋的方式（而不是concat+transform）（3）加一个总的交互Transformer效果更好
         return out
