@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.nn import MessagePassing
+from torch_geometric.nn import GATConv
 
 BINS = 3
 
@@ -55,7 +56,7 @@ class GeoMRGNNLayer(MessagePassing):
 
 
 class MultiRelationGNN(nn.Module):
-    def __init__(self, in_dim, out_dim, num_relations, h_dim=32):
+    def __init__(self, in_dim, out_dim, num_relations, h_dim=16):
         super().__init__()
         # learnable weights
         self.lambda_sym = nn.Parameter(torch.empty(1, 1))
@@ -65,13 +66,11 @@ class MultiRelationGNN(nn.Module):
 
         # layers
         self.field_mlp = nn.Linear(in_dim, h_dim)
+        self.gat_conv = GATConv(in_dim, h_dim, add_self_loops=False)
         self.geonn_l1 = GeoMRGNNLayer(h_dim, num_relations, self.lambda_sym, self.beta)
-        self.geonn_l2 = GeoMRGNNLayer(h_dim, num_relations, self.lambda_sym, self.beta)
+        self.geonn_l2_1 = GeoMRGNNLayer(h_dim, num_relations, self.lambda_sym, self.beta)
+        self.geonn_l2_2 = GeoMRGNNLayer(h_dim, num_relations, self.lambda_sym, self.beta)
         # binary classification with additive model
-        self.out_mlp0 = nn.Sequential(
-            nn.Linear(h_dim, out_dim),
-            nn.LeakyReLU(),
-        )
         self.out_mlp1 = nn.Sequential(
             nn.Linear(h_dim, out_dim),
             nn.LeakyReLU(),
@@ -80,15 +79,34 @@ class MultiRelationGNN(nn.Module):
             nn.Linear(h_dim, out_dim),
             nn.LeakyReLU(),
         )
+        self.out_mlp3 = nn.Sequential(
+            nn.Linear(h_dim, out_dim),
+            nn.LeakyReLU(),
+        )
+        self.out_mlp4 = nn.Sequential(
+            nn.Linear(h_dim, out_dim),
+            nn.LeakyReLU(),
+        )
+        self.out_all = nn.Sequential(
+            nn.Linear(h_dim*4, out_dim),
+            nn.LeakyReLU(),
+        )
 
     def forward(self, x, edge_index, edge_type, edge_time):
         node_emb0 = self.field_mlp(x)
-        node_emb1 = self.geonn_l1(x_emb=node_emb0, edge_index=edge_index, edge_type=edge_type,
+        node_nei1 = self.gat_conv(x, edge_index)
+
+        node_foc1 = self.geonn_l1(x_emb=node_emb0, edge_index=edge_index, edge_type=edge_type,
                                   edge_time=edge_time)
-        node_emb2 = self.geonn_l2(x_emb=node_emb1, edge_index=edge_index, edge_type=edge_type,
+        node_emb1 = self.geonn_l2_1(x_emb=node_emb0, edge_index=edge_index, edge_type=edge_type,
+                                  edge_time=edge_time)
+        node_foc2 = self.geonn_l2_1(x_emb=node_emb1, edge_index=edge_index, edge_type=edge_type,
                                   edge_time=edge_time)
 
-        out = self.out_mlp2(node_emb2) + self.out_mlp1(node_emb1) + self.out_mlp0(node_emb0)
+        #out = self.out_all(torch.cat([node_emb0, node_nei1, node_foc1, node_foc2], dim=-1))
+        out = self.out_mlp1(node_emb0) + self.out_mlp2(node_nei1) + self.out_mlp3(node_foc1) + self.out_mlp4(node_foc2) + self.out_all(torch.cat([node_emb0, node_nei1, node_foc1, node_foc2], dim=-1))
+
+        # TODO: 这里发现（1）GAT （2）用＋的方式（而不是concat+transform）（3）加一个总的交互Transformer效果更好
         return out
 
     def reset_parameters(self):
