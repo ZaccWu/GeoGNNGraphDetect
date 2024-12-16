@@ -117,6 +117,7 @@ class MultiRelationGNN(nn.Module):
         out = self.out_mlp1(node_focr) + self.out_mlp2(node_nei1) + self.out_mlp3(node_foc1) + self.out_mlp4(node_foc2) + self.out_all(torch.cat([node_focr, node_nei1, node_foc1, node_foc2], dim=-1))
 
         # TODO: 这里发现（1）GAT （2）用＋的方式（而不是concat+transform）（3）加一个总的交互Transformer效果更好
+        # TODO: 想办法减少内存占用
         return out
 
     def reset_parameters(self):
