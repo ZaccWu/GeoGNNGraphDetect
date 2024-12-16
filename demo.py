@@ -1,37 +1,50 @@
-
 import numpy as np
 import torch.nn.functional as F
-from model import *
-from GeoGData import *
 from sklearn.metrics import classification_report
 from sklearn.metrics import roc_auc_score
 from torch_geometric.data import Data, DataLoader
+import argparse
+
+from model import *
+from GeoGData import *
+from utils import *
+
+def get_args():
+    '''
+    Argument parser for running in command line
+    '''
+    parser = argparse.ArgumentParser('Geometric Graph Neural Network')
+    # model par
+
+    # training par
+    parser.add_argument('--gpu', type=int, help='gpu', default=0)
+    return parser.parse_args()
 
 def set_seed(seed):
-	np.random.seed(seed)
-	torch.manual_seed(seed)
-	torch.cuda.manual_seed(seed)
-	torch.cuda.manual_seed_all(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
 
 
-def contrastive_loss(target, pred_score, m=5):
-    # target: 0-1, pred_score: float
-    Rs = torch.mean(pred_score)
-    delta = torch.std(pred_score)
-    dev_score = (pred_score - Rs)/(delta + 1e-10)
-    cont_score = torch.max(torch.zeros(pred_score.shape).to(device), m-dev_score)
-    loss = dev_score[(1-target).nonzero()].sum()+cont_score[target.nonzero()].sum()
-    return loss # sum sample loss
+def main():
+    # load data
+    RunData = FinDGraphData()
+    data = RunData.data.to(device)
+    #RunData = SimulationData()
+    #data = RunData.gen_simulation_data().to(device)
 
-def transfer_pred(pred_score, threshold):
-    pred = pred_score.clone()
-    pred[torch.where(pred_score < threshold)] = 0
-    pred[torch.where(pred_score >= threshold)] = 1
-    return pred
+    # load model
+    model = MultiRelationGNN(
+        in_dim=RunData.num_features,
+        out_dim=RunData.target_types,
+        num_relations=RunData.edge_types
+    ).to(device)
 
-def main(data, model):
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
     batchsize = 262144
+    max_val_metrics = -np.inf
     for epoch in range(1, 100):
         model.train()
         # design for minibatch training
@@ -48,15 +61,13 @@ def main(data, model):
             else:
                 tr_pred_batch, tr_tar_batch = tr_pred[iter*batchsize: (iter+1)*batchsize], tr_tar[iter*batchsize: (iter+1)*batchsize]
 
-            loss = contrastive_loss(tr_tar_batch, tr_pred_batch)
+            loss = contrastive_loss(tr_tar_batch, tr_pred_batch, device, m=5)
             loss.backward()
             optimizer.step()
             total_loss+=loss
 
-        # no batch training
+        # select models with AUC
         if epoch % 10 == 0:
-            print(f'Epoch {epoch}, Loss: {total_loss:.4f}')
-
             # model validation
             model.eval()
             out = model(data.x, data.edge_index, data.edge_type, data.edge_time)
@@ -68,42 +79,46 @@ def main(data, model):
             val_pred_score_list = val_pred.detach().cpu().numpy()
             val_rec_list = val_r987.detach().cpu().numpy()
 
-            print('Val Results: ')
-            print(classification_report(np.array(val_tar_list), np.array(val_rec_list), digits=4))
-            print("Val AUC: ", roc_auc_score(np.array(val_tar_list), np.array(val_pred_score_list)))
+            val_class_rep = classification_report(np.array(val_tar_list), np.array(val_rec_list), output_dict=True)
+            val_auc = roc_auc_score(np.array(val_tar_list), np.array(val_pred_score_list))
 
+            if val_auc > max_val_metrics:
+                max_val_metrics = val_auc
+                # model test
+                model.eval()
+                out = model(data.x, data.edge_index, data.edge_type, data.edge_time)
+                ts_pred, ts_tar = out[data.test_mask].squeeze(-1), data.y[data.test_mask]
 
-    # model test
-    model.eval()
-    out = model(data.x, data.edge_index, data.edge_type, data.edge_time)
-    ts_pred, ts_tar = out[data.test_mask].squeeze(-1), data.y[data.test_mask]
+                ts_r987 = transfer_pred(ts_pred, torch.quantile(ts_pred, 0.987, dim=None, keepdim=False))
 
-    ts_r987 = transfer_pred(ts_pred, torch.quantile(ts_pred, 0.987, dim=None, keepdim=False))
+                ts_tar_list = ts_tar.detach().cpu().numpy()
+                ts_pred_score_list = ts_pred.detach().cpu().numpy()
+                ts_rec_list = ts_r987.detach().cpu().numpy()
 
-    ts_tar_list = ts_tar.detach().cpu().numpy()
-    ts_pred_score_list = ts_pred.detach().cpu().numpy()
-    ts_rec_list = ts_r987.detach().cpu().numpy()
+                ts_class_rep = classification_report(np.array(ts_tar_list), np.array(ts_rec_list), output_dict=True)
+                ts_auc = roc_auc_score(np.array(ts_tar_list), np.array(ts_pred_score_list))
 
-    print('Test Results: ')
-    print(classification_report(np.array(ts_tar_list), np.array(ts_rec_list), digits=4))
-    print("Test AUC: ", roc_auc_score(np.array(ts_tar_list), np.array(ts_pred_score_list)))
+                Rep_ts_auc, Rep_ts_rec1 = ts_auc, ts_class_rep['1']['recall']
+
+    return Rep_ts_auc, Rep_ts_rec1
+
 
 
 if __name__ == "__main__":
-    ## TODO: 设置重复试验
-    seed = 101
-    set_seed(seed)
-    device = torch.device('cuda:{}'.format(0) if torch.cuda.is_available() else 'cpu')
+    args = get_args()
+    device = torch.device('cuda:{}'.format(args.gpu) if torch.cuda.is_available() else 'cpu')
 
-    #RunData = SimulationData()
-    #data = RunData.gen_simulation_data().to(device)
+    Rep_res = {'seed': [], 'AUC': [], 'rec1': []}  # all possible evaluation metrics
+    for seed in range(1, 11):
+        set_seed(seed)
+        Rep_ts_auc, Rep_ts_rec1 = main()
+        Rep_res['seed'].append(seed)
+        Rep_res['AUC'].append(Rep_ts_auc)
+        Rep_res['rec1'].append(Rep_ts_rec1)
 
-    RunData = FinDGraphData()
-    data = RunData.data.to(device)
-    model = MultiRelationGNN(
-        in_dim=RunData.num_features,
-        out_dim=RunData.target_types,
-        num_relations=RunData.edge_types
-    ).to(device)
+        print(seed, ' AUC {:.4f}, '.format(Rep_ts_auc),
+              'Rec1 {:.4f}, '.format(Rep_ts_rec1))
 
-    main(data, model)
+    print(' AUC_ALL {:.4f} ({:.4f}), '.format(np.mean(Rep_res['AUC']), np.std(Rep_res['AUC'])),
+          ' REC1_ALL {:.4f} ({:.4f}), '.format(np.mean(Rep_res['rec1']), np.std(Rep_res['rec1']))
+          )

@@ -60,7 +60,7 @@ class GeoMRGNNLayer(MessagePassing):
 
 
 class MultiRelationGNN(nn.Module):
-    def __init__(self, in_dim, out_dim, num_relations, h_dim=16):
+    def __init__(self, in_dim, out_dim, num_relations, h_dim=8):
         super().__init__()
         # learnable weights
         self.lambda_sym = nn.Parameter(torch.empty(1, 1))
