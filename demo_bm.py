@@ -46,12 +46,9 @@ def main():
 
     # load model
     if args.model_name == 'gat':
-        model = GAT(
-            in_dim=RunData.num_features,
-            out_dim=RunData.target_types,
-            num_relations=RunData.edge_types
-        ).to(device)
-
+        model = GAT(in_dim=RunData.num_features, out_dim=RunData.target_types, num_relations=RunData.edge_types).to(device)
+    elif args.model_name == 'gcn':
+        model = GCN(in_dim=RunData.num_features, out_dim=RunData.target_types, num_relations=RunData.edge_types).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     max_val_metrics = -np.inf
     for epoch in range(args.n_epoch):
