@@ -23,6 +23,8 @@ class SimulationData():
             edge_attrs.append(edge_type)
         # concat all types of edges
         edge_index, edge_type = torch.cat(edges, dim=1), torch.cat(edge_attrs, dim=0)
+        # 生成边时间
+        edge_time = torch.randint(0, 100, (edge_index.shape[1],))  # Edge timestamps (e.g., formation time)
         # Random node positions (spatial features)
         pos = torch.randn(self.num_users, 3)  # 3D positions
 
@@ -33,6 +35,7 @@ class SimulationData():
             x=node_features,
             edge_index=edge_index,
             edge_type=edge_type,
+            edge_time=edge_time,
             pos=pos,
             y=labels)
         return data
@@ -47,10 +50,21 @@ class FinDGraphData():
         self.edge_types = len(pd.Series(data_raw['edge_type']).value_counts())
         self.target_types = 1
 
+        time_feature = data_raw['edge_timefeature'] # (num_edge, 4)
+        # min_vals, max_vals = time_feature.min(axis=0), time_feature.max(axis=0)  # column-wise min max
+        # range_vals = max_vals - min_vals
+        # range_vals[range_vals == 0] = 1  # avoiding zeros
+        # normalized_time_feature = (time_feature - min_vals) / range_vals
+
+        kbd = KBinsDiscretizer(n_bins=3, encode='onehot', strategy='uniform')
+        onehot_encoded = kbd.fit_transform(time_feature)
+        normalized_time_feature = onehot_encoded.toarray()  # (num_sample, num_features * num_bins)
+
         self.data = Data(
             x=torch.FloatTensor(data_raw['x']),
             edge_index=torch.LongTensor(data_raw['edge_index']).T, # -> (2, num_edges)
             edge_type=torch.LongTensor(data_raw['edge_type']), # (num_edges,)
+            edge_time=torch.FloatTensor(normalized_time_feature), # (num_edges, 4*nbins)
             y=torch.LongTensor(data_raw['y']),
             train_mask=torch.LongTensor(data_raw['train_mask']),
             val_mask=torch.LongTensor(data_raw['valid_mask']),

@@ -14,7 +14,7 @@ class GAT(nn.Module):
         self.linear = nn.Linear(h_dim, 1)
         self.act = nn.LeakyReLU()
 
-    def forward(self, x, edge_index, edge_type):
+    def forward(self, x, edge_index, edge_type, edge_time):
         x = F.dropout(x, self.dropout, training=self.training)
         x1 = self.gatconv_1(x, edge_index)
         x1 = F.dropout(x1, self.dropout, training=self.training)
@@ -32,7 +32,7 @@ class GCN(nn.Module):
         self.linear = nn.Linear(h_dim, 1)
         self.act = nn.LeakyReLU()
 
-    def forward(self, x, edge_index, edge_type):
+    def forward(self, x, edge_index, edge_type, edge_time):
         x = F.dropout(x, self.dropout, training=self.training)
         x1 = self.gatconv_1(x, edge_index)
         x1 = F.dropout(x1, self.dropout, training=self.training)

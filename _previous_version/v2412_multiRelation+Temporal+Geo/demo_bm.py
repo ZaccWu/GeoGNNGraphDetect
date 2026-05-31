@@ -7,7 +7,7 @@ import argparse
 import warnings
 warnings.filterwarnings("ignore")
 
-from model_geo import *
+from model_base import *
 from GeoGData import *
 from utils import *
 
@@ -17,10 +17,10 @@ def get_args():
     '''
     Argument parser for running in command line
     '''
-    parser = argparse.ArgumentParser('Geometric-Aware Graph Neural Network')
+    parser = argparse.ArgumentParser('Benchmark models')
     # model par
     # task parameter
-    parser.add_argument('--model_name', type=str, help='train model', default='gagnn')
+    parser.add_argument('--model_name', type=str, help='train model', default='gat')
 
     # training par
     parser.add_argument('--gpu', type=int, help='gpu', default=0)
@@ -45,12 +45,10 @@ def main():
     #data = RunData.gen_simulation_data().to(device)
 
     # load model
-    model = MultiRelationGNN(
-        in_dim=RunData.num_features,
-        out_dim=RunData.target_types,
-        num_relations=RunData.edge_types
-    ).to(device)
-
+    if args.model_name == 'gat':
+        model = GAT(in_dim=RunData.num_features, out_dim=RunData.target_types, num_relations=RunData.edge_types).to(device)
+    elif args.model_name == 'gcn':
+        model = GCN(in_dim=RunData.num_features, out_dim=RunData.target_types, num_relations=RunData.edge_types).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     max_val_metrics = -np.inf
     for epoch in range(args.n_epoch):
@@ -61,7 +59,7 @@ def main():
         total_loss = 0
         for iter in range(n_iter+1):
             optimizer.zero_grad()
-            out = model(data.x, data.edge_index, data.edge_type)
+            out = model(data.x, data.edge_index, data.edge_type, data.edge_time)
             tr_pred = out[data.train_mask].squeeze(-1)
 
             if (iter+1)*args.bs >= len(tr_tar):
@@ -78,7 +76,7 @@ def main():
         if epoch % args.spe == 0:
             # model validation
             model.eval()
-            out = model(data.x, data.edge_index, data.edge_type)
+            out = model(data.x, data.edge_index, data.edge_type, data.edge_time)
             val_pred, val_tar = out[data.val_mask].squeeze(-1), data.y[data.val_mask]
 
             val_r987 = transfer_pred(val_pred, torch.quantile(val_pred, 0.987, dim=None, keepdim=False))
@@ -94,7 +92,7 @@ def main():
                 max_val_metrics = val_auc
                 # model test
                 model.eval()
-                out = model(data.x, data.edge_index, data.edge_type)
+                out = model(data.x, data.edge_index, data.edge_type, data.edge_time)
                 ts_pred, ts_tar = out[data.test_mask].squeeze(-1), data.y[data.test_mask]
 
                 ts_r987 = transfer_pred(ts_pred, torch.quantile(ts_pred, 0.987, dim=None, keepdim=False))
@@ -124,7 +122,7 @@ if __name__ == "__main__":
         Rep_res['AUC'].append(Rep_ts_auc)
         Rep_res['rec1'].append(Rep_ts_rec1)
 
-        print(args.model_name, ' AUC {:.4f}, '.format(Rep_ts_auc),
+        print(args.model_name, seed, ' AUC {:.4f}, '.format(Rep_ts_auc),
               'Rec1 {:.4f}, '.format(Rep_ts_rec1))
 
     print(' AUC_ALL {:.4f} ({:.4f}), '.format(np.mean(Rep_res['AUC']), np.std(Rep_res['AUC'])),
