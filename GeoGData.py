@@ -23,8 +23,6 @@ class SimulationData():
             edge_attrs.append(edge_type)
         # concat all types of edges
         edge_index, edge_type = torch.cat(edges, dim=1), torch.cat(edge_attrs, dim=0)
-        # Random node positions (spatial features)
-        pos = torch.randn(self.num_users, 3)  # 3D positions
 
         # 3. 生成标签：用户兴趣类别（假设3类）
         labels = torch.randint(0, self.target_types, (self.num_users,), dtype=torch.long)
@@ -33,7 +31,6 @@ class SimulationData():
             x=node_features,
             edge_index=edge_index,
             edge_type=edge_type,
-            pos=pos,
             y=labels)
         return data
 

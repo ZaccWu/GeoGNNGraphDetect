@@ -48,7 +48,8 @@ def main():
     model = MultiRelationGNN(
         in_dim=RunData.num_features,
         out_dim=RunData.target_types,
-        num_relations=RunData.edge_types
+        num_relations=RunData.edge_types,
+        n=len(data.x),
     ).to(device)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
@@ -61,7 +62,7 @@ def main():
         total_loss = 0
         for iter in range(n_iter+1):
             optimizer.zero_grad()
-            out = model(data.x, data.edge_index, data.edge_type)
+            out, hsic_loss = model(data.x, data.edge_index, data.edge_type)
             tr_pred = out[data.train_mask].squeeze(-1)
 
             if (iter+1)*args.bs >= len(tr_tar):
@@ -69,7 +70,8 @@ def main():
             else:
                 tr_pred_batch, tr_tar_batch = tr_pred[iter*args.bs: (iter+1)*args.bs], tr_tar[iter*args.bs: (iter+1)*args.bs]
 
-            loss = contrastive_loss(tr_tar_batch, tr_pred_batch, device, m=5)
+            cont_loss = contrastive_loss(tr_tar_batch, tr_pred_batch, device, m=5)
+            loss = cont_loss + hsic_loss
             loss.backward()
             optimizer.step()
             total_loss+=loss
@@ -78,7 +80,7 @@ def main():
         if epoch % args.spe == 0:
             # model validation
             model.eval()
-            out = model(data.x, data.edge_index, data.edge_type)
+            out, _ = model(data.x, data.edge_index, data.edge_type)
             val_pred, val_tar = out[data.val_mask].squeeze(-1), data.y[data.val_mask]
 
             val_r987 = transfer_pred(val_pred, torch.quantile(val_pred, 0.987, dim=None, keepdim=False))
@@ -94,7 +96,7 @@ def main():
                 max_val_metrics = val_auc
                 # model test
                 model.eval()
-                out = model(data.x, data.edge_index, data.edge_type)
+                out, _ = model(data.x, data.edge_index, data.edge_type)
                 ts_pred, ts_tar = out[data.test_mask].squeeze(-1), data.y[data.test_mask]
 
                 ts_r987 = transfer_pred(ts_pred, torch.quantile(ts_pred, 0.987, dim=None, keepdim=False))
