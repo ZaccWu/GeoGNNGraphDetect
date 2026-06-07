@@ -63,13 +63,14 @@ class MultiRelationGNN(nn.Module):
 
         self.n = n
         self.weight = nn.Parameter(torch.ones((self.n, 1)))
+        self.training = True
         for m in self.modules(): # weight initialization
             if isinstance(m, nn.Linear):
                 m.weight.data = nn.init.xavier_uniform_(m.weight.data, gain=nn.init.calculate_gain('relu'))
                 if m.bias is not None:
                     m.bias.data = nn.init.constant_(m.bias.data, 0.0)
 
-    def forward(self, x, edge_index, edge_type):
+    def forward(self, x, edge_index, edge_type, node_mask):
         '''
         Construct different dimension featurs:
         1. node_emb0: raw feature of the focal node (after field transformation)
@@ -89,14 +90,15 @@ class MultiRelationGNN(nn.Module):
 
         out = self.out_mlp1(node_focr) + self.out_mlp2(node_nei1) + self.out_mlp3(node_foc1) + self.out_mlp4(node_foc2) + self.out_all(torch.cat([node_focr, node_nei1, node_foc1, node_foc2], dim=-1))
 
-        # TODO: 这里发现（1）GAT （2）用＋的方式（而不是concat+transform）（3）加一个总的交互Transformer效果更好
-        # TODO: 想办法减少内存占用
-        hsic_loss = Variable(torch.FloatTensor([0]).cuda())
-        emb_list = [node_focr, node_nei1, node_foc1, node_foc2]
-        for i in range(len(emb_list)):
-            for j in range(i+1, len(emb_list)):
-                hsic_loss += self.hsic(emb_list[i], emb_list[j], self.weight * self.weight, self.n).view(1) 
-
+        if self.training:
+            hsic_loss = Variable(torch.FloatTensor([0]).cuda())
+            emb_list = [node_focr[node_mask], node_nei1[node_mask], 
+                        node_foc1[node_mask], node_foc2[node_mask]]
+            for i in range(len(emb_list)):
+                for j in range(i+1, len(emb_list)):
+                    hsic_loss += self.hsic(emb_list[i], emb_list[j], self.weight * self.weight, self.n).view(1) 
+        else:
+            hsic_loss = None
         return out, hsic_loss
 
     def hsic(self, emb1, emb2, sample_weights, dim):

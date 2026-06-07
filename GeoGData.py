@@ -36,22 +36,19 @@ class SimulationData():
 
 
 class FinDGraphData():
-    def __init__(self):
+    def __init__(self, gid):
         super(FinDGraphData, self).__init__()
-        data_raw = np.load('./data/DGraphFin/dgraphfin_processed.npz')
-        self.num_users = data_raw['x'].shape[0]
+        data_raw = torch.load('data/credit_graph'+str(gid)+'.pt', weights_only=False)
+        self.num_users = data_raw.num_nodes
         self.num_features = data_raw['x'].shape[-1]
         self.edge_types = len(pd.Series(data_raw['edge_type']).value_counts())
         self.target_types = 1
 
         self.data = Data(
-            x=torch.FloatTensor(data_raw['x']),
+            x=torch.FloatTensor(data_raw['x'].float()),
             edge_index=torch.LongTensor(data_raw['edge_index']).T, # -> (2, num_edges)
             edge_type=torch.LongTensor(data_raw['edge_type']), # (num_edges,)
             y=torch.LongTensor(data_raw['y']),
-            train_mask=torch.LongTensor(data_raw['train_mask']),
-            val_mask=torch.LongTensor(data_raw['valid_mask']),
-            test_mask=torch.LongTensor(data_raw['test_mask'])
         )
         del data_raw
 

@@ -2,6 +2,7 @@ import numpy as np
 import torch.nn.functional as F
 from sklearn.metrics import classification_report
 from sklearn.metrics import roc_auc_score
+from sklearn.model_selection import KFold, train_test_split
 from torch_geometric.data import Data, DataLoader
 import argparse
 import warnings
@@ -21,13 +22,15 @@ def get_args():
     # model par
     # task parameter
     parser.add_argument('--model_name', type=str, help='train model', default='gagnn')
-
+    parser.add_argument('--gid', type=int, help='graph id', default=1)
     # training par
     parser.add_argument('--gpu', type=int, help='gpu', default=0)
     parser.add_argument('--n_epoch', type=int, help='number of epochs', default=100)
     parser.add_argument('--lr', type=float, help='learning rate', default=1e-3)
-    parser.add_argument('--bs', type=int, help='batch size', default=262144)  # node-level batch
+    parser.add_argument('--bs', type=int, help='batch size', default=1024)  # node-level batch
     parser.add_argument('--spe', type=int, help='save per epoch', default=10)
+
+    parser.add_argument('--seed', type=int, help='random seed', default=101)
     return parser.parse_args()
 
 def set_seed(seed):
@@ -37,98 +40,127 @@ def set_seed(seed):
         torch.cuda.manual_seed(seed)
         torch.cuda.manual_seed_all(seed)
 
-def main():
-    # load data
-    RunData = FinDGraphData()
-    data = RunData.data.to(device)
-    #RunData = SimulationData()
-    #data = RunData.gen_simulation_data().to(device)
 
-    # load model
+def train_eval_fold(data_base, train_idx, val_idx, test_idx, args, device, RunData):
+    # 深拷贝数据并设置mask（避免污染原始数据）
+    data = data_base.clone()
+    data.train_mask = torch.zeros(data.num_nodes, dtype=torch.bool, device=device)
+    data.val_mask   = torch.zeros(data.num_nodes, dtype=torch.bool, device=device)
+    data.test_mask  = torch.zeros(data.num_nodes, dtype=torch.bool, device=device)
+    data.train_mask[train_idx] = True
+    data.val_mask[val_idx]     = True
+    data.test_mask[test_idx]   = True
+
+    # 初始化模型
     model = MultiRelationGNN(
         in_dim=RunData.num_features,
         out_dim=RunData.target_types,
         num_relations=RunData.edge_types,
-        n=len(data.x),
+        n=RunData.num_users,
     ).to(device)
-
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
-    max_val_metrics = -np.inf
+
+    max_val_auc = -np.inf
+    best_test_auc = 0.0
+    best_test_rec1 = 0.0
+    train_indices = torch.where(data.train_mask)[0]
     for epoch in range(args.n_epoch):
         model.train()
-        # design for minibatch training
-        tr_tar = data.y[data.train_mask]
-        n_iter = int(len(tr_tar)/args.bs)
-        total_loss = 0
-        for iter in range(n_iter+1):
+        model.training = True
+        tr_tar = data.y[data.train_mask]                 # 所有训练标签
+        total_loss = 0.0
+
+        # batch training
+        n_iter = int(len(tr_tar) / args.bs) + 1
+        for i in range(n_iter):
             optimizer.zero_grad()
-            out, hsic_loss = model(data.x, data.edge_index, data.edge_type)
+            start = i * args.bs
+            end = min((i + 1) * args.bs, len(tr_tar))
+            if start >= len(tr_tar):
+                break
+
+            batch_node_ids = train_indices[start:end]
+            node_mask = torch.zeros(data.num_nodes, dtype=torch.bool, device=device)
+            node_mask[batch_node_ids] = True
+
+            out, hsic_loss = model(data.x, data.edge_index, data.edge_type, node_mask=node_mask)
             tr_pred = out[data.train_mask].squeeze(-1)
-
-            if (iter+1)*args.bs >= len(tr_tar):
-                tr_pred_batch, tr_tar_batch = tr_pred[iter*args.bs: ], tr_pred[iter*args.bs: ]
-            else:
-                tr_pred_batch, tr_tar_batch = tr_pred[iter*args.bs: (iter+1)*args.bs], tr_tar[iter*args.bs: (iter+1)*args.bs]
-
+            tr_pred_batch = tr_pred[start:end]
+            tr_tar_batch   = tr_tar[start:end]
             cont_loss = contrastive_loss(tr_tar_batch, tr_pred_batch, device, m=5)
             loss = cont_loss + hsic_loss
             loss.backward()
             optimizer.step()
-            total_loss+=loss
 
-        # select models with AUC
+            total_loss += loss.item()
+
         if epoch % args.spe == 0:
-            # model validation
             model.eval()
-            out, _ = model(data.x, data.edge_index, data.edge_type)
-            val_pred, val_tar = out[data.val_mask].squeeze(-1), data.y[data.val_mask]
+            model.training = False
+            with torch.no_grad():
+                out, _ = model(data.x, data.edge_index, data.edge_type, None)
 
-            val_r987 = transfer_pred(val_pred, torch.quantile(val_pred, 0.987, dim=None, keepdim=False))
+                # 验证集评估
+                val_pred = out[data.val_mask].squeeze(-1)
+                val_tar  = data.y[data.val_mask]
+                val_auc = roc_auc_score(val_tar.cpu().numpy(), val_pred.cpu().numpy())
 
-            val_tar_list = val_tar.detach().cpu().numpy()
-            val_pred_score_list = val_pred.detach().cpu().numpy()
-            val_rec_list = val_r987.detach().cpu().numpy()
+                # 若验证集AUC提升，则在测试集上评估并保存最佳结果
+                if val_auc > max_val_auc:
+                    max_val_auc = val_auc
+                    # 测试集评估
+                    ts_pred = out[data.test_mask].squeeze(-1)
+                    ts_tar  = data.y[data.test_mask]
+                    ts_auc = roc_auc_score(ts_tar.cpu().numpy(), ts_pred.cpu().numpy())
 
-            val_class_rep = classification_report(np.array(val_tar_list), np.array(val_rec_list), output_dict=True)
-            val_auc = roc_auc_score(np.array(val_tar_list), np.array(val_pred_score_list))
+                    # 计算Recall@1（前1.3%阈值）
+                    threshold = torch.quantile(ts_pred, 0.987, dim=None, keepdim=False)
+                    ts_rec = transfer_pred(ts_pred, threshold)
+                    class_rep = classification_report(ts_tar.cpu().numpy(), ts_rec.cpu().numpy(), output_dict=True)
+                    ts_rec1 = class_rep['1']['recall']
 
-            if val_auc > max_val_metrics:
-                max_val_metrics = val_auc
-                # model test
-                model.eval()
-                out, _ = model(data.x, data.edge_index, data.edge_type)
-                ts_pred, ts_tar = out[data.test_mask].squeeze(-1), data.y[data.test_mask]
+                    best_test_auc = ts_auc
+                    best_test_rec1 = ts_rec1
 
-                ts_r987 = transfer_pred(ts_pred, torch.quantile(ts_pred, 0.987, dim=None, keepdim=False))
+    return best_test_auc, best_test_rec1
 
-                ts_tar_list = ts_tar.detach().cpu().numpy()
-                ts_pred_score_list = ts_pred.detach().cpu().numpy()
-                ts_rec_list = ts_r987.detach().cpu().numpy()
 
-                ts_class_rep = classification_report(np.array(ts_tar_list), np.array(ts_rec_list), output_dict=True)
-                ts_auc = roc_auc_score(np.array(ts_tar_list), np.array(ts_pred_score_list))
+def main_cv(data, args, device, RunData):
 
-                Rep_ts_auc, Rep_ts_rec1 = ts_auc, ts_class_rep['1']['recall']
+    n = data.num_nodes
+    indices = np.arange(n)
+    kf = KFold(n_splits=10, shuffle=True, random_state=args.seed)  # 注意：args需要传入seed
 
-    return Rep_ts_auc, Rep_ts_rec1
+    fold_aucs = []
+    fold_rec1s = []
 
+    for train_val_idx, test_idx in kf.split(indices):
+        # 从训练+验证索引中按 8:1 划分出训练集和验证集（验证集占剩余样本的1/9，即总样本的10%）
+        val_size = len(train_val_idx) // 9   # 使得验证集占总样本约10%
+        train_idx, val_idx = train_test_split(train_val_idx, test_size=val_size, random_state=args.seed)
+
+        # 转为torch张量并移到device
+        train_idx = torch.tensor(train_idx, dtype=torch.long, device=device)
+        val_idx   = torch.tensor(val_idx,   dtype=torch.long, device=device)
+        test_idx  = torch.tensor(test_idx,  dtype=torch.long, device=device)
+
+        auc, rec1 = train_eval_fold(data, train_idx, val_idx, test_idx, args, device, RunData)
+        fold_aucs.append(auc)
+        fold_rec1s.append(rec1)
+
+    return np.mean(fold_aucs), np.mean(fold_rec1s)
+    
 
 
 if __name__ == "__main__":
     args = get_args()
     device = torch.device('cuda:{}'.format(args.gpu) if torch.cuda.is_available() else 'cpu')
 
-    Rep_res = {'seed': [], 'AUC': [], 'rec1': []}  # all possible evaluation metrics
-    for seed in range(1, 11):
-        set_seed(seed)
-        Rep_ts_auc, Rep_ts_rec1 = main()
-        Rep_res['seed'].append(seed)
-        Rep_res['AUC'].append(Rep_ts_auc)
-        Rep_res['rec1'].append(Rep_ts_rec1)
+    RunData = FinDGraphData(gid=1)
+    data = RunData.data.to(device)
+    #RunData = SimulationData()
+    #data = RunData.gen_simulation_data().to(device)
 
-        print(args.model_name, ' AUC {:.4f}, '.format(Rep_ts_auc),
-              'Rec1 {:.4f}, '.format(Rep_ts_rec1))
-
-    print(' AUC_ALL {:.4f} ({:.4f}), '.format(np.mean(Rep_res['AUC']), np.std(Rep_res['AUC'])),
-          ' REC1_ALL {:.4f} ({:.4f}), '.format(np.mean(Rep_res['rec1']), np.std(Rep_res['rec1']))
-          )
+    Rep_ts_auc, Rep_ts_rec1 = main_cv(data, args, device, RunData)
+    print(' AUC_ALL {:.4f}, '.format(Rep_ts_auc),
+          ' REC1_ALL {:.4f}, '.format(Rep_ts_rec1))
