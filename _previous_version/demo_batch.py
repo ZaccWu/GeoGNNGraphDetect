@@ -7,20 +7,10 @@ from torch_geometric.data import Data, DataLoader
 import argparse
 import warnings
 warnings.filterwarnings("ignore")
+
 from model_geo import *
 from GeoGData import *
 from utils import *
-
-def set_seed(seed):
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed(seed)
-        torch.cuda.manual_seed_all(seed)
-        # 确保 CuDNN 使用确定性算法
-        torch.backends.cudnn.deterministic = True
-        torch.backends.cudnn.benchmark = False
-
 
 
 
@@ -37,11 +27,18 @@ def get_args():
     parser.add_argument('--gpu', type=int, help='gpu', default=0)
     parser.add_argument('--n_epoch', type=int, help='number of epochs', default=100)
     parser.add_argument('--lr', type=float, help='learning rate', default=1e-3)
+    parser.add_argument('--bs', type=int, help='batch size', default=1024)  # node-level batch
     parser.add_argument('--spe', type=int, help='save per epoch', default=10)
 
     parser.add_argument('--seed', type=int, help='random seed', default=101)
     return parser.parse_args()
 
+def set_seed(seed):
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
 
 
 def train_eval_fold(data_base, train_idx, val_idx, test_idx, args, device, RunData):
@@ -72,21 +69,36 @@ def train_eval_fold(data_base, train_idx, val_idx, test_idx, args, device, RunDa
         model.training = True
         tr_tar = data.y[data.train_mask]                 # 所有训练标签
         total_loss = 0.0
-        optimizer.zero_grad()
-        out, hsic_loss = model(data.x, data.edge_index, data.edge_type)
-        tr_pred = out[data.train_mask].squeeze(-1)
-        cont_loss = contrastive_loss(tr_tar, tr_pred, device, m=5)
-        loss = cont_loss + hsic_loss
-        loss.backward()
-        optimizer.step()
 
-        total_loss += loss.item()
+        # batch training
+        n_iter = int(len(tr_tar) / args.bs) + 1
+        for i in range(n_iter):
+            optimizer.zero_grad()
+            start = i * args.bs
+            end = min((i + 1) * args.bs, len(tr_tar))
+            if start >= len(tr_tar):
+                break
+
+            batch_node_ids = train_indices[start:end]
+            node_mask = torch.zeros(data.num_nodes, dtype=torch.bool, device=device)
+            node_mask[batch_node_ids] = True
+
+            out, hsic_loss = model(data.x, data.edge_index, data.edge_type, node_mask=node_mask)
+            tr_pred = out[data.train_mask].squeeze(-1)
+            tr_pred_batch = tr_pred[start:end]
+            tr_tar_batch   = tr_tar[start:end]
+            cont_loss = contrastive_loss(tr_tar_batch, tr_pred_batch, device, m=5)
+            loss = cont_loss + hsic_loss
+            loss.backward()
+            optimizer.step()
+
+            total_loss += loss.item()
 
         if epoch % args.spe == 0:
             model.eval()
             model.training = False
             with torch.no_grad():
-                out, _ = model(data.x, data.edge_index, data.edge_type)
+                out, _ = model(data.x, data.edge_index, data.edge_type, None)
 
                 # 验证集评估
                 val_pred = out[data.val_mask].squeeze(-1)
@@ -114,12 +126,14 @@ def train_eval_fold(data_base, train_idx, val_idx, test_idx, args, device, RunDa
 
 
 def main_cv(data, args, device, RunData):
-    indices = np.arange(data.num_nodes)
+
+    n = data.num_nodes
+    indices = np.arange(n)
     kf = KFold(n_splits=10, shuffle=True, random_state=args.seed)  # 注意：args需要传入seed
+
     fold_aucs = []
     fold_rec1s = []
 
-    Fold_id = 0
     for train_val_idx, test_idx in kf.split(indices):
         # 从训练+验证索引中按 8:1 划分出训练集和验证集（验证集占剩余样本的1/9，即总样本的10%）
         val_size = len(train_val_idx) // 9   # 使得验证集占总样本约10%
@@ -133,8 +147,6 @@ def main_cv(data, args, device, RunData):
         auc, rec1 = train_eval_fold(data, train_idx, val_idx, test_idx, args, device, RunData)
         fold_aucs.append(auc)
         fold_rec1s.append(rec1)
-        print("Trained fold: ", Fold_id)
-        Fold_id += 1
 
     return np.mean(fold_aucs), np.mean(fold_rec1s)
     
@@ -143,7 +155,7 @@ def main_cv(data, args, device, RunData):
 if __name__ == "__main__":
     args = get_args()
     device = torch.device('cuda:{}'.format(args.gpu) if torch.cuda.is_available() else 'cpu')
-    set_seed(args.seed)
+
     RunData = FinDGraphData(gid=1)
     data = RunData.data.to(device)
     #RunData = SimulationData()

@@ -70,7 +70,7 @@ class MultiRelationGNN(nn.Module):
                 if m.bias is not None:
                     m.bias.data = nn.init.constant_(m.bias.data, 0.0)
 
-    def forward(self, x, edge_index, edge_type):
+    def forward(self, x, edge_index, edge_type, node_mask):
         '''
         Construct different dimension featurs:
         1. node_emb0: raw feature of the focal node (after field transformation)
@@ -92,14 +92,47 @@ class MultiRelationGNN(nn.Module):
 
         if self.training:
             hsic_loss = Variable(torch.FloatTensor([0]).cuda())
-            emb_list = [node_focr, node_nei1, 
-                        node_foc1, node_foc2]
+            emb_list = [node_focr[node_mask], node_nei1[node_mask], 
+                        node_foc1[node_mask], node_foc2[node_mask]]
             for i in range(len(emb_list)):
                 for j in range(i+1, len(emb_list)):
                     hsic_loss += self.hsic_rff(emb_list[i], emb_list[j], self.feature_d).view(1) 
         else:
             hsic_loss = None
         return out, hsic_loss
+
+    # def hsic_rff(self, x, y, n_features, gamma_x=None, gamma_y=None):
+    #     """
+    #     基于 RFF 的 HSIC 估计，内存 O(B * n_features)
+    #     """
+    #     B = x.shape[0]
+    #     pairwise_dist = torch.cdist(x, x).view(-1)
+    #     gamma_x = 1.0 / (2 * torch.median(pairwise_dist) ** 2 + 1e-8)
+    #     pairwise_dist = torch.cdist(y, y).view(-1)
+    #     gamma_y = 1.0 / (2 * torch.median(pairwise_dist) ** 2 + 1e-8)
+
+    #     phi_x = self.rbf_kernel_rff(x, gamma_x, n_features)  # [B, nf]
+    #     phi_y = self.rbf_kernel_rff(y, gamma_y, n_features)  # [B, nf]
+
+    #     # 中心化
+    #     phi_x = phi_x - phi_x.mean(dim=0, keepdim=True)
+    #     phi_y = phi_y - phi_y.mean(dim=0, keepdim=True)
+
+    #     # HSIC = (1/(B-1)^2) * trace( K_x H K_y H ) 的 RFF 近似
+    #     # 这里简化为：HSIC ≈ (1/B^2) * sum_{i,j} (phi_x[i]·phi_x[j]) (phi_y[i]·phi_y[j]) ?
+    #     # 更准确的做法：利用 RFF 的线性性质，直接计算交叉协方差
+    #     C = (phi_x.T @ phi_y) / (B - 1)   # [nf, nf]
+    #     hsic = torch.norm(C, p='fro') ** 2
+    #     return hsic
+        
+    # def rbf_kernel_rff(self, x, gamma, n_features):
+    #     """使用随机傅里叶特征近似 RBF 核"""
+    #     B, D = x.shape
+    #     # 随机生成权重和偏置
+    #     W = torch.randn(D, n_features, device=x.device) * torch.sqrt(2.0 * gamma)
+    #     b = 2 * torch.pi * torch.rand(n_features, device=x.device)
+    #     z = torch.sqrt(torch.tensor(2.0 / n_features)) * torch.cos(x @ W + b)
+    #     return z  # [B, n_features]
 
     def rff_gaussian(self, x, gamma, n_features):
         """
