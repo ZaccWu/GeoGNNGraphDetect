@@ -21,9 +21,6 @@ def set_seed(seed):
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
 
-
-
-
 def get_args():
     '''
     Argument parser for running in command line
@@ -34,19 +31,18 @@ def get_args():
     parser.add_argument('--model_name', type=str, help='train model', default='gagnn')
     parser.add_argument('--gid', type=int, help='graph id', default=1)
     # training par
+    parser.add_argument('--reg', type=float, help='hsic reg', default=1)
+
     parser.add_argument('--gpu', type=int, help='gpu', default=0)
     parser.add_argument('--n_epoch', type=int, help='number of epochs', default=100)
     parser.add_argument('--lr', type=float, help='learning rate', default=1e-3)
     parser.add_argument('--spe', type=int, help='save per epoch', default=10)
-
     parser.add_argument('--seed', type=int, help='random seed', default=101)
     return parser.parse_args()
 
 
-
 def train_eval_fold(data_base, train_idx, val_idx, test_idx, args, device, RunData):
     # 深拷贝数据并设置mask（避免污染原始数据）
-    data = data_base.clone()
     data.train_mask = torch.zeros(data.num_nodes, dtype=torch.bool, device=device)
     data.val_mask   = torch.zeros(data.num_nodes, dtype=torch.bool, device=device)
     data.test_mask  = torch.zeros(data.num_nodes, dtype=torch.bool, device=device)
@@ -76,7 +72,7 @@ def train_eval_fold(data_base, train_idx, val_idx, test_idx, args, device, RunDa
         out, hsic_loss = model(data.x, data.edge_index, data.edge_type)
         tr_pred = out[data.train_mask].squeeze(-1)
         cont_loss = contrastive_loss(tr_tar, tr_pred, device, m=5)
-        loss = cont_loss + hsic_loss
+        loss = cont_loss + args.reg * hsic_loss
         loss.backward()
         optimizer.step()
 
@@ -139,12 +135,11 @@ def main_cv(data, args, device, RunData):
     return np.mean(fold_aucs), np.mean(fold_rec1s)
     
 
-
 if __name__ == "__main__":
     args = get_args()
     device = torch.device('cuda:{}'.format(args.gpu) if torch.cuda.is_available() else 'cpu')
     set_seed(args.seed)
-    RunData = FinDGraphData(gid=1)
+    RunData = FinDGraphData(gid=args.gid)
     data = RunData.data.to(device)
     #RunData = SimulationData()
     #data = RunData.gen_simulation_data().to(device)

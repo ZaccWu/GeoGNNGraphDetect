@@ -46,7 +46,7 @@ class GeoMRGNNLayer(MessagePassing):
 
 
 class MultiRelationGNN(nn.Module):
-    def __init__(self, in_dim, out_dim, num_relations, n, h_dim=8):
+    def __init__(self, in_dim, out_dim, num_relations, n, h_dim=64):
         super().__init__()
         # layers
         self.feature_d = in_dim
@@ -91,7 +91,7 @@ class MultiRelationGNN(nn.Module):
         out = self.out_mlp1(node_focr) + self.out_mlp2(node_nei1) + self.out_mlp3(node_foc1) + self.out_mlp4(node_foc2) + self.out_all(torch.cat([node_focr, node_nei1, node_foc1, node_foc2], dim=-1))
 
         if self.training:
-            hsic_loss = Variable(torch.FloatTensor([0]).cuda())
+            hsic_loss = 0
             emb_list = [node_focr, node_nei1, 
                         node_foc1, node_foc2]
             for i in range(len(emb_list)):
