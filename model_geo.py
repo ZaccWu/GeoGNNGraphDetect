@@ -11,11 +11,12 @@ from torch.autograd import Variable
 ## TODO 3: explanable
 
 class GeoMRGNNLayer(MessagePassing):
-    def __init__(self, h_dim, num_relations):
+    def __init__(self, in_dim, h_dim, num_relations):
         super().__init__()  # 聚合方法
         # Separate MLPs for each relation type
+        self.h_dim = h_dim
         self.relation_mlps = torch.nn.ModuleList(
-            [nn.Linear(h_dim * 2, h_dim) for _ in range(num_relations)]
+            [nn.Linear(in_dim * 2, self.h_dim) for _ in range(num_relations)]
         )
         self.num_relations = num_relations  # Number of relation types
 
@@ -28,7 +29,7 @@ class GeoMRGNNLayer(MessagePassing):
     def message(self, x_j, x_i, edge_type):
         # Relation-specific transformation
         edge_type = edge_type.long()  # Ensure edge_type is long for indexing
-        msg_emb = torch.empty_like(x_j)  # msg_emb: (num_edge, h_dim)
+        msg_emb = torch.empty(x_j.size(0), self.h_dim, device=x_j.device, dtype=x_j.dtype)
 
         for r in range(self.num_relations):
             mask = edge_type == r
@@ -44,23 +45,25 @@ class GeoMRGNNLayer(MessagePassing):
         return aggr_out
 
 
-
 class MultiRelationGNN(nn.Module):
     def __init__(self, in_dim, out_dim, num_relations, n, h_dim=64):
         super().__init__()
         # layers
         self.feature_d = in_dim
         self.field_mlp = nn.Linear(in_dim, h_dim)
-        self.gat_conv = GATConv(in_dim, h_dim, add_self_loops=False)
-        self.geonn_l1 = GeoMRGNNLayer(h_dim, num_relations)
-        self.geonn_l2_1 = GeoMRGNNLayer(h_dim, num_relations)
-        self.geonn_l2_2 = GeoMRGNNLayer(h_dim, num_relations)
+
+        self.gat_conv1 = GATConv(in_dim, h_dim, add_self_loops=False)
+        self.gat_conv2 = GATConv(h_dim, h_dim, add_self_loops=False)
+
+        self.geonn_l1 = GeoMRGNNLayer(in_dim, h_dim, num_relations)
+        self.geonn_l2 = GeoMRGNNLayer(h_dim, h_dim, num_relations)
+
         # binary classification with additive model
         self.out_mlp1 = nn.Sequential(nn.Linear(h_dim, out_dim),nn.LeakyReLU())
         self.out_mlp2 = nn.Sequential(nn.Linear(h_dim, out_dim),nn.LeakyReLU())
         self.out_mlp3 = nn.Sequential(nn.Linear(h_dim, out_dim),nn.LeakyReLU())
         self.out_mlp4 = nn.Sequential(nn.Linear(h_dim, out_dim),nn.LeakyReLU())
-        self.out_all = nn.Sequential(nn.Linear(h_dim*4, out_dim),nn.LeakyReLU())
+        self.out_all = nn.Sequential(nn.Linear(h_dim*3, out_dim),nn.LeakyReLU())
 
         self.n = n
         self.training = True
@@ -71,29 +74,25 @@ class MultiRelationGNN(nn.Module):
                     m.bias.data = nn.init.constant_(m.bias.data, 0.0)
 
     def forward(self, x, edge_index, edge_type):
-        '''
-        Construct different dimension featurs:
-        1. node_emb0: raw feature of the focal node (after field transformation)
-        2. node_nei1: aggr of neighbors' raw features (after transformation in gat)
-        3. node_foc1: 1-layer geonn aggr
-        4. node_foc2: 2-layer geonn aggr
-        '''
         # 焦点特征
         node_focr = self.field_mlp(x)
-        # 邻居特征（不区分边）
-        node_nei1 = self.gat_conv(x, edge_index)
-        # 一阶邻居特征（区分边）
-        node_foc1 = self.geonn_l1(x_emb=node_focr, edge_index=edge_index, edge_type=edge_type)
-        # 二阶邻居特征（区分边）
-        node_emb1 = self.geonn_l2_1(x_emb=node_focr, edge_index=edge_index, edge_type=edge_type)
-        node_foc2 = self.geonn_l2_1(x_emb=node_emb1, edge_index=edge_index, edge_type=edge_type)
 
-        out = self.out_mlp1(node_focr) + self.out_mlp2(node_nei1) + self.out_mlp3(node_foc1) + self.out_mlp4(node_foc2) + self.out_all(torch.cat([node_focr, node_nei1, node_foc1, node_foc2], dim=-1))
+        # # 邻居特征（不区分边）
+        # node_nei1 = self.gat_conv1(x, edge_index)
+        # node_nei2 = self.gat_conv2(node_nei1, edge_index)
+
+        # 一阶邻居特征（区分边）
+        node_foc1 = self.geonn_l1(x_emb=x, edge_index=edge_index, edge_type=edge_type)
+        node_foc2 = self.geonn_l2(x_emb=node_foc1, edge_index=edge_index, edge_type=edge_type)
+
+        out = self.out_mlp1(node_focr) + self.out_mlp3(node_foc1) + self.out_mlp4(node_foc2) + self.out_all(torch.cat([node_focr, node_foc1, node_foc2], dim=-1))
+        #out = self.out_mlp1(node_focr) + self.out_mlp2(node_nei2) + self.out_mlp3(node_foc1) + self.out_mlp4(node_foc2) + self.out_all(torch.cat([node_focr, node_nei1, node_foc1, node_foc2], dim=-1))
+        emb_list = [node_focr, node_foc1, node_foc2]
+        #emb_list = [node_focr, node_nei2, node_foc1, node_foc2]
 
         if self.training:
             hsic_loss = 0
-            emb_list = [node_focr, node_nei1, 
-                        node_foc1, node_foc2]
+            
             for i in range(len(emb_list)):
                 for j in range(i+1, len(emb_list)):
                     hsic_loss += self.hsic_rff(emb_list[i], emb_list[j], self.feature_d).view(1) 

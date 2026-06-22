@@ -31,7 +31,7 @@ def get_args():
     parser.add_argument('--model_name', type=str, help='train model', default='gagnn')
     parser.add_argument('--gid', type=int, help='graph id', default=1)
     # training par
-    parser.add_argument('--reg', type=float, help='hsic reg', default=1)
+    parser.add_argument('--reg', type=float, help='hsic reg', default=100)
 
     parser.add_argument('--gpu', type=int, help='gpu', default=0)
     parser.add_argument('--n_epoch', type=int, help='number of epochs', default=100)
