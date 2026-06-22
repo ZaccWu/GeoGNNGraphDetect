@@ -63,7 +63,7 @@ class MultiRelationGNN(nn.Module):
         self.out_mlp2 = nn.Sequential(nn.Linear(h_dim, out_dim),nn.LeakyReLU())
         self.out_mlp3 = nn.Sequential(nn.Linear(h_dim, out_dim),nn.LeakyReLU())
         self.out_mlp4 = nn.Sequential(nn.Linear(h_dim, out_dim),nn.LeakyReLU())
-        self.out_all = nn.Sequential(nn.Linear(h_dim*3, out_dim),nn.LeakyReLU())
+        self.out_all = nn.Sequential(nn.Linear(h_dim*4, out_dim),nn.LeakyReLU())
 
         self.n = n
         self.training = True
@@ -77,18 +77,18 @@ class MultiRelationGNN(nn.Module):
         # 焦点特征
         node_focr = self.field_mlp(x)
 
-        # # 邻居特征（不区分边）
-        # node_nei1 = self.gat_conv1(x, edge_index)
-        # node_nei2 = self.gat_conv2(node_nei1, edge_index)
+        # 邻居特征（不区分边）
+        node_nei1 = self.gat_conv1(x, edge_index)
+        node_nei2 = self.gat_conv2(node_nei1, edge_index)
 
         # 一阶邻居特征（区分边）
         node_foc1 = self.geonn_l1(x_emb=x, edge_index=edge_index, edge_type=edge_type)
         node_foc2 = self.geonn_l2(x_emb=node_foc1, edge_index=edge_index, edge_type=edge_type)
 
-        out = self.out_mlp1(node_focr) + self.out_mlp3(node_foc1) + self.out_mlp4(node_foc2) + self.out_all(torch.cat([node_focr, node_foc1, node_foc2], dim=-1))
-        #out = self.out_mlp1(node_focr) + self.out_mlp2(node_nei2) + self.out_mlp3(node_foc1) + self.out_mlp4(node_foc2) + self.out_all(torch.cat([node_focr, node_nei1, node_foc1, node_foc2], dim=-1))
-        emb_list = [node_focr, node_foc1, node_foc2]
-        #emb_list = [node_focr, node_nei2, node_foc1, node_foc2]
+        #out = self.out_mlp1(node_focr) + self.out_mlp3(node_foc1) + self.out_mlp4(node_foc2) + self.out_all(torch.cat([node_focr, node_foc1, node_foc2], dim=-1))
+        out = self.out_mlp1(node_focr) + self.out_mlp2(node_nei2) + self.out_mlp3(node_foc1) + self.out_mlp4(node_foc2) + self.out_all(torch.cat([node_focr, node_nei1, node_foc1, node_foc2], dim=-1))
+        #emb_list = [node_focr, node_foc1, node_foc2]
+        emb_list = [node_focr, node_nei2, node_foc1, node_foc2]
 
         if self.training:
             hsic_loss = 0

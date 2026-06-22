@@ -1,7 +1,7 @@
 import numpy as np
 import torch.nn.functional as F
 from sklearn.metrics import classification_report
-from sklearn.metrics import roc_auc_score
+from sklearn.metrics import roc_auc_score, average_precision_score
 from sklearn.model_selection import KFold, train_test_split
 from torch_geometric.data import Data, DataLoader
 import argparse
@@ -60,9 +60,8 @@ def train_eval_fold(data_base, train_idx, val_idx, test_idx, args, device, RunDa
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
     max_val_auc = -np.inf
-    best_test_auc = 0.0
-    best_test_rec1 = 0.0
     train_indices = torch.where(data.train_mask)[0]
+    best_res = {}
     for epoch in range(args.n_epoch):
         model.train()
         model.training = True
@@ -96,24 +95,26 @@ def train_eval_fold(data_base, train_idx, val_idx, test_idx, args, device, RunDa
                     ts_pred = out[data.test_mask].squeeze(-1)
                     ts_tar  = data.y[data.test_mask]
                     ts_auc = roc_auc_score(ts_tar.cpu().numpy(), ts_pred.cpu().numpy())
+                    ts_auprc = average_precision_score(ts_tar.cpu().numpy(), ts_pred.cpu().numpy())
 
                     # 计算Recall@1（前1.3%阈值）
                     threshold = torch.quantile(ts_pred, 0.987, dim=None, keepdim=False)
                     ts_rec = transfer_pred(ts_pred, threshold)
                     class_rep = classification_report(ts_tar.cpu().numpy(), ts_rec.cpu().numpy(), output_dict=True)
                     ts_rec1 = class_rep['1']['recall']
+                    ts_prec1 = class_rep['1']['precision']      # 异常类精确率（若需查看）
+                    ts_f1 = class_rep['1']['f1-score']          # 异常类 F1（新增）
 
-                    best_test_auc = ts_auc
-                    best_test_rec1 = ts_rec1
+                    best_res['auc'], best_res['pr-auc'] = ts_auc, ts_auprc
+                    best_res['rec'], best_res['prec'], best_res['f1'] = ts_rec1, ts_prec1, ts_f1
 
-    return best_test_auc, best_test_rec1
+    return best_res
 
 
 def main_cv(data, args, device, RunData):
     indices = np.arange(data.num_nodes)
     kf = KFold(n_splits=10, shuffle=True, random_state=args.seed)  # 注意：args需要传入seed
-    fold_aucs = []
-    fold_rec1s = []
+    fold_res = {'auc':[],'pr-auc':[],'rec':[],'prec':[],'f1':[]}
 
     Fold_id = 0
     for train_val_idx, test_idx in kf.split(indices):
@@ -126,14 +127,15 @@ def main_cv(data, args, device, RunData):
         val_idx   = torch.tensor(val_idx,   dtype=torch.long, device=device)
         test_idx  = torch.tensor(test_idx,  dtype=torch.long, device=device)
 
-        auc, rec1 = train_eval_fold(data, train_idx, val_idx, test_idx, args, device, RunData)
-        fold_aucs.append(auc)
-        fold_rec1s.append(rec1)
+        res = train_eval_fold(data, train_idx, val_idx, test_idx, args, device, RunData)
+        fold_res['auc'].append(res['auc'])
+        fold_res['pr-auc'].append(res['pr-auc'])
+        fold_res['rec'].append(res['rec'])
+        fold_res['prec'].append(res['prec'])
+        fold_res['f1'].append(res['f1'])
         print("Trained fold: ", Fold_id)
         Fold_id += 1
-
-    return np.mean(fold_aucs), np.mean(fold_rec1s)
-    
+    return fold_res
 
 if __name__ == "__main__":
     args = get_args()
@@ -144,6 +146,10 @@ if __name__ == "__main__":
     #RunData = SimulationData()
     #data = RunData.gen_simulation_data().to(device)
 
-    Rep_ts_auc, Rep_ts_rec1 = main_cv(data, args, device, RunData)
-    print(' AUC_ALL {:.4f}, '.format(Rep_ts_auc),
-          ' REC1_ALL {:.4f}, '.format(Rep_ts_rec1))
+    Fold_res = main_cv(data, args, device, RunData)
+    print(' AUC {:.4f}, '.format(np.mean(Fold_res['auc'])),
+          ' REC-1 {:.4f}, '.format(np.mean(Fold_res['rec'])),
+          ' PRAUC {:.4f}, '.format(np.mean(Fold_res['pr-auc'])),
+          ' PREC-1 {:.4f}, '.format(np.mean(Fold_res['prec'])),
+          ' F1-1 {:.4f}, '.format(np.mean(Fold_res['f1']))
+    )
