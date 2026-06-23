@@ -31,7 +31,7 @@ def get_args():
     parser.add_argument('--model_name', type=str, help='train model', default='gagnn')
     parser.add_argument('--gid', type=int, help='graph id', default=1)
     # training par
-    parser.add_argument('--reg', type=float, help='hsic reg', default=100)
+    parser.add_argument('--reg', type=float, help='hsic reg', default=1)
 
     parser.add_argument('--gpu', type=int, help='gpu', default=0)
     parser.add_argument('--n_epoch', type=int, help='number of epochs', default=100)
@@ -70,7 +70,7 @@ def train_eval_fold(data_base, train_idx, val_idx, test_idx, args, device, RunDa
         optimizer.zero_grad()
         out, hsic_loss = model(data.x, data.edge_index, data.edge_type)
         tr_pred = out[data.train_mask].squeeze(-1)
-        cont_loss = contrastive_loss(tr_tar, tr_pred, device, m=5)
+        cont_loss = contrastive_loss(tr_tar, tr_pred, device, m=3)
         loss = cont_loss + args.reg * hsic_loss
         loss.backward()
         optimizer.step()
@@ -97,8 +97,8 @@ def train_eval_fold(data_base, train_idx, val_idx, test_idx, args, device, RunDa
                     ts_auc = roc_auc_score(ts_tar.cpu().numpy(), ts_pred.cpu().numpy())
                     ts_auprc = average_precision_score(ts_tar.cpu().numpy(), ts_pred.cpu().numpy())
 
-                    # 计算Recall@1（前1.3%阈值）
-                    threshold = torch.quantile(ts_pred, 0.987, dim=None, keepdim=False)
+                    # 计算Recall@1（前2%阈值）
+                    threshold = torch.quantile(ts_pred, 0.98, dim=None, keepdim=False)
                     ts_rec = transfer_pred(ts_pred, threshold)
                     class_rep = classification_report(ts_tar.cpu().numpy(), ts_rec.cpu().numpy(), output_dict=True)
                     ts_rec1 = class_rep['1']['recall']
