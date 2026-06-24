@@ -58,12 +58,13 @@ class MultiRelationGNN(nn.Module):
         self.geonn_l1 = GeoMRGNNLayer(in_dim, h_dim, num_relations)
         self.geonn_l2 = GeoMRGNNLayer(h_dim, h_dim, num_relations)
 
-        # binary classification with additive model
+        # # binary classification with additive model
         # self.out_mlp1 = nn.Sequential(nn.Linear(h_dim, out_dim),nn.LeakyReLU())
         # self.out_mlp2 = nn.Sequential(nn.Linear(h_dim, out_dim),nn.LeakyReLU())
         # self.out_mlp3 = nn.Sequential(nn.Linear(h_dim, out_dim),nn.LeakyReLU())
         # self.out_mlp4 = nn.Sequential(nn.Linear(h_dim, out_dim),nn.LeakyReLU())
         self.out_all = nn.Sequential(nn.Linear(h_dim*4, out_dim),nn.LeakyReLU())
+        # self.out_mlp = nn.Sequential(nn.Linear(h_dim, out_dim), nn.LeakyReLU())
 
         self.edge_weight_net = nn.Sequential(
             nn.Linear(h_dim * 2, h_dim),
@@ -73,9 +74,6 @@ class MultiRelationGNN(nn.Module):
         )
         self.alpha = alpha
 
-        # 新增：视图注意力评分（共享参数，极简）
-        self.view_attn = nn.Linear(h_dim, 1, bias=True)
-        
         self.n = n
         self.training = True
         for m in self.modules(): # weight initialization
@@ -96,7 +94,6 @@ class MultiRelationGNN(nn.Module):
         node_foc1 = self.geonn_l1(x_emb=x, edge_index=edge_index, edge_type=edge_type)
         node_foc2 = self.geonn_l2(x_emb=node_foc1, edge_index=edge_index, edge_type=edge_type)
 
-        # out = self.out_mlp1(node_focr) + self.out_mlp2(node_nei2) + self.out_mlp3(node_foc1) + self.out_mlp4(node_foc2) + self.out_all(torch.cat([node_focr, node_nei1, node_foc1, node_foc2], dim=-1))
         out = self.out_all(torch.cat([node_focr, node_nei1, node_foc1, node_foc2], dim=-1))
         emb_list = [node_focr, node_nei2, node_foc1, node_foc2]
 
@@ -116,6 +113,7 @@ class MultiRelationGNN(nn.Module):
             reg_loss = loss_wcons + self.alpha * loss_weight
         else:
             hsic_loss, reg_loss = None, None
+        
         return out, hsic_loss, reg_loss
 
     def rff_gaussian(self, x, gamma, n_features):
