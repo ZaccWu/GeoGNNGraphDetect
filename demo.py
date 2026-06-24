@@ -31,7 +31,8 @@ def get_args():
     parser.add_argument('--model_name', type=str, help='train model', default='gagnn')
     parser.add_argument('--gid', type=int, help='graph id', default=1)
     # training par
-    parser.add_argument('--reg', type=float, help='hsic reg', default=1)
+    parser.add_argument('--reg1', type=float, help='hsic reg', default=1)
+    parser.add_argument('--reg2', type=float, help='hsic reg', default=0.1)
 
     parser.add_argument('--gpu', type=int, help='gpu', default=0)
     parser.add_argument('--n_epoch', type=int, help='number of epochs', default=100)
@@ -68,10 +69,10 @@ def train_eval_fold(data_base, train_idx, val_idx, test_idx, args, device, RunDa
         tr_tar = data.y[data.train_mask]                 # 所有训练标签
         total_loss = 0.0
         optimizer.zero_grad()
-        out, hsic_loss = model(data.x, data.edge_index, data.edge_type)
+        out, hsic_loss, wei_loss = model(data.x, data.edge_index, data.edge_type)
         tr_pred = out[data.train_mask].squeeze(-1)
         cont_loss = contrastive_loss(tr_tar, tr_pred, device, m=3)
-        loss = cont_loss + args.reg * hsic_loss
+        loss = cont_loss + args.reg1 * hsic_loss + args.reg2 * wei_loss
         loss.backward()
         optimizer.step()
 
@@ -81,7 +82,7 @@ def train_eval_fold(data_base, train_idx, val_idx, test_idx, args, device, RunDa
             model.eval()
             model.training = False
             with torch.no_grad():
-                out, _ = model(data.x, data.edge_index, data.edge_type)
+                out, _, _ = model(data.x, data.edge_index, data.edge_type)
 
                 # 验证集评估
                 val_pred = out[data.val_mask].squeeze(-1)

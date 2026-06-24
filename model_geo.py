@@ -46,7 +46,7 @@ class GeoMRGNNLayer(MessagePassing):
 
 
 class MultiRelationGNN(nn.Module):
-    def __init__(self, in_dim, out_dim, num_relations, n, h_dim=64):
+    def __init__(self, in_dim, out_dim, num_relations, n, h_dim=64, alpha=0.5):
         super().__init__()
         # layers
         self.feature_d = in_dim
@@ -65,6 +65,17 @@ class MultiRelationGNN(nn.Module):
         # self.out_mlp4 = nn.Sequential(nn.Linear(h_dim, out_dim),nn.LeakyReLU())
         self.out_all = nn.Sequential(nn.Linear(h_dim*4, out_dim),nn.LeakyReLU())
 
+        self.edge_weight_net = nn.Sequential(
+            nn.Linear(h_dim * 2, h_dim),
+            nn.LeakyReLU(),
+            nn.Linear(h_dim, 1),
+            nn.Sigmoid()
+        )
+        self.alpha = alpha
+
+        # 新增：视图注意力评分（共享参数，极简）
+        self.view_attn = nn.Linear(h_dim, 1, bias=True)
+        
         self.n = n
         self.training = True
         for m in self.modules(): # weight initialization
@@ -92,15 +103,20 @@ class MultiRelationGNN(nn.Module):
         if self.training:
             hsic_loss = 0
             hsic_loss = self.hsic_rff(emb_list[0], emb_list[1], self.feature_d).view(1) 
-            + self.hsic_rff(emb_list[0], emb_list[2], self.feature_d).view(1)
-            + self.hsic_rff(emb_list[0], emb_list[3], self.feature_d).view(1)
+            + self.hsic_rff(emb_list[0], emb_list[2], self.feature_d).view(1) 
 
-            # for i in range(len(emb_list)):
-            #     for j in range(i+1, len(emb_list)):
-            #         hsic_loss += self.hsic_rff(emb_list[i], emb_list[j], self.feature_d).view(1) 
+            z = node_focr  # 节点自身特征 [N, h_dim]
+            row, col = edge_index
+            z_i, z_j = z[row], z[col]   # [E, h_dim]
+            edge_input = torch.cat([z_i, z_j], dim=-1)  # [E, 2*h_dim]
+            w = self.edge_weight_net(edge_input).squeeze(-1)  # [E]
+            dist = ((z_i - z_j) ** 2).sum(dim=-1)  # [E]
+            loss_wcons = (w * dist).mean()
+            loss_weight = ((1 - w) ** 2).mean() # 权重惩罚：鼓励 w 接近 1，防止全 0 退化
+            reg_loss = loss_wcons + self.alpha * loss_weight
         else:
-            hsic_loss = None
-        return out, hsic_loss
+            hsic_loss, reg_loss = None, None
+        return out, hsic_loss, reg_loss
 
     def rff_gaussian(self, x, gamma, n_features):
         """
