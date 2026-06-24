@@ -59,10 +59,10 @@ class MultiRelationGNN(nn.Module):
         self.geonn_l2 = GeoMRGNNLayer(h_dim, h_dim, num_relations)
 
         # binary classification with additive model
-        self.out_mlp1 = nn.Sequential(nn.Linear(h_dim, out_dim),nn.LeakyReLU())
-        self.out_mlp2 = nn.Sequential(nn.Linear(h_dim, out_dim),nn.LeakyReLU())
-        self.out_mlp3 = nn.Sequential(nn.Linear(h_dim, out_dim),nn.LeakyReLU())
-        self.out_mlp4 = nn.Sequential(nn.Linear(h_dim, out_dim),nn.LeakyReLU())
+        # self.out_mlp1 = nn.Sequential(nn.Linear(h_dim, out_dim),nn.LeakyReLU())
+        # self.out_mlp2 = nn.Sequential(nn.Linear(h_dim, out_dim),nn.LeakyReLU())
+        # self.out_mlp3 = nn.Sequential(nn.Linear(h_dim, out_dim),nn.LeakyReLU())
+        # self.out_mlp4 = nn.Sequential(nn.Linear(h_dim, out_dim),nn.LeakyReLU())
         self.out_all = nn.Sequential(nn.Linear(h_dim*4, out_dim),nn.LeakyReLU())
 
         self.n = n
@@ -85,17 +85,19 @@ class MultiRelationGNN(nn.Module):
         node_foc1 = self.geonn_l1(x_emb=x, edge_index=edge_index, edge_type=edge_type)
         node_foc2 = self.geonn_l2(x_emb=node_foc1, edge_index=edge_index, edge_type=edge_type)
 
-        #out = self.out_mlp1(node_focr) + self.out_mlp3(node_foc1) + self.out_mlp4(node_foc2) + self.out_all(torch.cat([node_focr, node_foc1, node_foc2], dim=-1))
-        out = self.out_mlp1(node_focr) + self.out_mlp2(node_nei2) + self.out_mlp3(node_foc1) + self.out_mlp4(node_foc2) + self.out_all(torch.cat([node_focr, node_nei1, node_foc1, node_foc2], dim=-1))
-        #emb_list = [node_focr, node_foc1, node_foc2]
+        # out = self.out_mlp1(node_focr) + self.out_mlp2(node_nei2) + self.out_mlp3(node_foc1) + self.out_mlp4(node_foc2) + self.out_all(torch.cat([node_focr, node_nei1, node_foc1, node_foc2], dim=-1))
+        out = self.out_all(torch.cat([node_focr, node_nei1, node_foc1, node_foc2], dim=-1))
         emb_list = [node_focr, node_nei2, node_foc1, node_foc2]
 
         if self.training:
             hsic_loss = 0
-            
-            for i in range(len(emb_list)):
-                for j in range(i+1, len(emb_list)):
-                    hsic_loss += self.hsic_rff(emb_list[i], emb_list[j], self.feature_d).view(1) 
+            hsic_loss = self.hsic_rff(emb_list[0], emb_list[1], self.feature_d).view(1) 
+            + self.hsic_rff(emb_list[0], emb_list[2], self.feature_d).view(1)
+            + self.hsic_rff(emb_list[0], emb_list[3], self.feature_d).view(1)
+
+            # for i in range(len(emb_list)):
+            #     for j in range(i+1, len(emb_list)):
+            #         hsic_loss += self.hsic_rff(emb_list[i], emb_list[j], self.feature_d).view(1) 
         else:
             hsic_loss = None
         return out, hsic_loss

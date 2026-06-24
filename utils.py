@@ -1,12 +1,12 @@
 import torch
 
-def contrastive_loss(target, pred_score, device, m=5):
+def contrastive_loss(target, pred_score, device, m=3):
     # target: 0-1, pred_score: float
     Rs = torch.mean(pred_score)
     delta = torch.std(pred_score)
     dev_score = (pred_score - Rs)/(delta + 1e-10)
     cont_score = torch.max(torch.zeros(pred_score.shape).to(device), m-dev_score)
-    loss = dev_score[(1-target).nonzero()].mean()+cont_score[target.nonzero()].mean() # check：sum改mean的效果是否更好
+    loss = dev_score[(1-target).nonzero()].mean()+cont_score[target.nonzero()].mean() 
     return loss # sum sample loss
 
 def transfer_pred(pred_score, threshold):
