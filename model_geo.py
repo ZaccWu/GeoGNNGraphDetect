@@ -58,13 +58,8 @@ class MultiRelationGNN(nn.Module):
         self.geonn_l1 = GeoMRGNNLayer(in_dim, h_dim, num_relations)
         self.geonn_l2 = GeoMRGNNLayer(h_dim, h_dim, num_relations)
 
-        # # binary classification with additive model
-        # self.out_mlp1 = nn.Sequential(nn.Linear(h_dim, out_dim),nn.LeakyReLU())
-        # self.out_mlp2 = nn.Sequential(nn.Linear(h_dim, out_dim),nn.LeakyReLU())
-        # self.out_mlp3 = nn.Sequential(nn.Linear(h_dim, out_dim),nn.LeakyReLU())
-        # self.out_mlp4 = nn.Sequential(nn.Linear(h_dim, out_dim),nn.LeakyReLU())
+        # binary classification with additive model
         self.out_all = nn.Sequential(nn.Linear(h_dim*4, out_dim),nn.LeakyReLU())
-        # self.out_mlp = nn.Sequential(nn.Linear(h_dim, out_dim), nn.LeakyReLU())
 
         self.edge_weight_net = nn.Sequential(
             nn.Linear(h_dim * 2, h_dim),
@@ -84,25 +79,25 @@ class MultiRelationGNN(nn.Module):
 
     def forward(self, x, edge_index, edge_type):
         # 焦点特征
-        node_focr = self.field_mlp(x)
+        foc_emb = self.field_mlp(x)
 
         # 邻居特征（不区分边）
-        node_nei1 = self.gat_conv1(x, edge_index)
-        node_nei2 = self.gat_conv2(node_nei1, edge_index)
+        nei_emb = self.gat_conv2(self.gat_conv1(x, edge_index), edge_index)
 
         # 一阶邻居特征（区分边）
-        node_foc1 = self.geonn_l1(x_emb=x, edge_index=edge_index, edge_type=edge_type)
-        node_foc2 = self.geonn_l2(x_emb=node_foc1, edge_index=edge_index, edge_type=edge_type)
+        mr_emb1 = self.geonn_l1(x_emb=x, edge_index=edge_index, edge_type=edge_type)
+        mr_emb2 = self.geonn_l2(x_emb=mr_emb1, edge_index=edge_index, edge_type=edge_type)
 
-        out = self.out_all(torch.cat([node_focr, node_nei1, node_foc1, node_foc2], dim=-1))
-        emb_list = [node_focr, node_nei2, node_foc1, node_foc2]
+        out = self.out_all(torch.cat([foc_emb, nei_emb, mr_emb1, mr_emb2], dim=-1))
 
         if self.training:
+            # hsic_loss = self.dev_fnorm(emb_list[0], emb_list[1]) + self.dev_fnorm(emb_list[0], emb_list[2])
+            # + self.dev_fnorm(emb_list[1], emb_list[2])
             hsic_loss = 0
-            hsic_loss = self.hsic_rff(emb_list[0], emb_list[1], self.feature_d).view(1) 
-            + self.hsic_rff(emb_list[0], emb_list[2], self.feature_d).view(1) 
+            #hsic_loss = self.hsic_rff(nei_emb, mr_emb1, self.feature_d).view(1) + self.hsic_rff(nei_emb, mr_emb2, self.feature_d).view(1) 
+            hsic_loss = self.hsic_rff(foc_emb, mr_emb1, self.feature_d).view(1) + self.hsic_rff(foc_emb, mr_emb2, self.feature_d).view(1) 
 
-            z = node_focr  # 节点自身特征 [N, h_dim]
+            z = foc_emb  # 节点自身特征 [N, h_dim]
             row, col = edge_index
             z_i, z_j = z[row], z[col]   # [E, h_dim]
             edge_input = torch.cat([z_i, z_j], dim=-1)  # [E, 2*h_dim]
@@ -115,6 +110,12 @@ class MultiRelationGNN(nn.Module):
             hsic_loss, reg_loss = None, None
         
         return out, hsic_loss, reg_loss
+    
+    def dev_fnorm(self, emb1, emb2):
+        H1 = F.normalize(emb1, dim=0)
+        H2 = F.normalize(emb2, dim=0)
+        loss_div = torch.norm(H1.t() @ H2, p='fro') ** 2
+        return loss_div
 
     def rff_gaussian(self, x, gamma, n_features):
         """
