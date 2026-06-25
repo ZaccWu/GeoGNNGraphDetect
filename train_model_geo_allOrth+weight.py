@@ -4,7 +4,6 @@ from sklearn.metrics import classification_report
 from sklearn.metrics import roc_auc_score, average_precision_score
 from sklearn.model_selection import KFold, train_test_split
 from torch_geometric.data import Data, DataLoader
-
 import argparse
 import warnings
 warnings.filterwarnings("ignore")
@@ -32,7 +31,8 @@ def get_args():
     parser.add_argument('--model_name', type=str, help='train model', default='gagnn')
     parser.add_argument('--gid', type=int, help='graph id', default=1)
     # training par
-    parser.add_argument('--reg', type=float, help='hsic reg', default=1)
+    parser.add_argument('--reg1', type=float, help='hsic reg', default=0) # hsic:1
+    parser.add_argument('--reg2', type=float, help='hsic reg', default=0.1)
 
     parser.add_argument('--gpu', type=int, help='gpu', default=0)
     parser.add_argument('--n_epoch', type=int, help='number of epochs', default=100)
@@ -69,20 +69,11 @@ def train_eval_fold(data_base, train_idx, val_idx, test_idx, args, device, RunDa
         tr_tar = data.y[data.train_mask]                 # 所有训练标签
         total_loss = 0.0
         optimizer.zero_grad()
-        out, foc_emb, nei_emb, mr_emb1, mr_emb2 = model(data.x, data.edge_index, data.edge_type)
+        out, hsic_loss, wei_loss = model(data.x, data.edge_index, data.edge_type)
         tr_pred = out[data.train_mask].squeeze(-1)
-
-        ## TODO：实现不同视图正则化
-
         cont_loss = contrastive_loss(tr_tar, tr_pred, device, m=3)
-
-
-        co_loss = class_orthloss(foc_emb[data.train_mask], tr_tar) + class_orthloss(nei_emb[data.train_mask], tr_tar) 
-        + class_orthloss(mr_emb1[data.train_mask], tr_tar) + class_orthloss(mr_emb2[data.train_mask], tr_tar)
-
-
-        loss = cont_loss + args.reg * co_loss
-        #print(cont_loss.item(), co_loss.item())
+        loss = cont_loss + args.reg1 * hsic_loss + args.reg2 * wei_loss
+        print(cont_loss.item(), hsic_loss.item(), wei_loss.item())
         loss.backward()
         optimizer.step()
 
@@ -92,7 +83,7 @@ def train_eval_fold(data_base, train_idx, val_idx, test_idx, args, device, RunDa
             model.eval()
             model.training = False
             with torch.no_grad():
-                out, _, _, _, _ = model(data.x, data.edge_index, data.edge_type)
+                out, _, _ = model(data.x, data.edge_index, data.edge_type)
 
                 # 验证集评估
                 val_pred = out[data.val_mask].squeeze(-1)

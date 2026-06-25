@@ -87,5 +87,68 @@ class MultiRelationGNN(nn.Module):
         mr_emb2 = self.geonn_l2(x_emb=mr_emb1, edge_index=edge_index, edge_type=edge_type)
 
         out = self.out_all(torch.cat([foc_emb, nei_emb, mr_emb1, mr_emb2], dim=-1))
-        return out, foc_emb, nei_emb, mr_emb1, mr_emb2
 
+        if self.training:
+            hsic_loss = self.dev_fnorm(nei_emb, mr_emb1) + self.dev_fnorm(nei_emb, mr_emb2)
+            #hsic_loss = self.hsic_rff(nei_emb, mr_emb1, self.feature_d).view(1) + self.hsic_rff(nei_emb, mr_emb2, self.feature_d).view(1) 
+            #hsic_loss = self.hsic_rff(foc_emb, mr_emb1, self.feature_d).view(1) + self.hsic_rff(foc_emb, mr_emb2, self.feature_d).view(1) 
+
+            z = foc_emb  # 节点自身特征 [N, h_dim]
+            row, col = edge_index
+            z_i, z_j = z[row], z[col]   # [E, h_dim]
+            edge_input = torch.cat([z_i, z_j], dim=-1)  # [E, 2*h_dim]
+            w = self.edge_weight_net(edge_input).squeeze(-1)  # [E]
+            dist = ((z_i - z_j) ** 2).sum(dim=-1)  # [E]
+            loss_wcons = (w * dist).mean()
+            loss_weight = ((1 - w) ** 2).mean() # 权重惩罚：鼓励 w 接近 1，防止全 0 退化
+            reg_loss = loss_wcons + self.alpha * loss_weight
+        else:
+            hsic_loss, reg_loss = None, None
+        
+        return out, hsic_loss, reg_loss
+    
+    def dev_fnorm(self, emb1, emb2):
+        H1 = F.normalize(emb1, dim=0)
+        H2 = F.normalize(emb2, dim=0)
+        loss_div = torch.norm(H1.t() @ H2, p='fro') ** 2
+        return loss_div
+
+    # def rff_gaussian(self, x, gamma, n_features):
+    #     """
+    #     随机傅里叶特征近似高斯核（RBF）
+    #     输入 x: [B, d]
+    #     输出 phi: [B, n_features]
+    #     """
+    #     B, d = x.shape
+    #     # 随机权重和偏置
+    #     W = torch.randn(d, n_features, device=x.device) * torch.sqrt(torch.tensor(2.0 * gamma))
+    #     b = 2 * torch.pi * torch.rand(n_features, device=x.device)
+    #     z = x @ W + b
+    #     phi = torch.sqrt(torch.tensor(2.0 / n_features)) * torch.cos(z)
+    #     return phi
+
+    # def hsic_rff(self, x, y, n_features, gamma_x=None, gamma_y=None):
+    #     """
+    #     基于 RFF 的 HSIC 近似，内存 O(B * n_features + n_features^2)
+    #     x, y: [B, d]
+    #     """
+    #     B = x.shape[0]
+    #     # 自适应带宽：使用特征的标准差（启发式）
+    #     if gamma_x is None:
+    #         sigma_x = torch.median(torch.std(x, dim=0)).item()
+    #         gamma_x = 1.0 / (2.0 * sigma_x**2 + 1e-8)
+    #     if gamma_y is None:
+    #         sigma_y = torch.median(torch.std(y, dim=0)).item()
+    #         gamma_y = 1.0 / (2.0 * sigma_y**2 + 1e-8)
+
+    #     phi_x = self.rff_gaussian(x, gamma_x, n_features)  # [B, D]
+    #     phi_y = self.rff_gaussian(y, gamma_y, n_features)  # [B, D]
+
+    #     # 中心化（减去均值）
+    #     phi_x = phi_x - phi_x.mean(dim=0, keepdim=True)
+    #     phi_y = phi_y - phi_y.mean(dim=0, keepdim=True)
+
+    #     # 交叉协方差矩阵 (D, D)
+    #     C = (phi_x.T @ phi_y) / (B - 1)
+    #     hsic = torch.norm(C, p='fro') ** 2
+    #     return hsic
