@@ -31,7 +31,7 @@ def get_args():
     parser.add_argument('--model_name', type=str, help='train model', default='gagnn')
     parser.add_argument('--gid', type=int, help='graph id', default=1)
     # training par
-    parser.add_argument('--reg1', type=float, help='hsic reg', default=1)
+    parser.add_argument('--reg1', type=float, help='hsic reg', default=0) # hsic:1
     parser.add_argument('--reg2', type=float, help='hsic reg', default=0.1)
 
     parser.add_argument('--gpu', type=int, help='gpu', default=0)
@@ -73,6 +73,7 @@ def train_eval_fold(data_base, train_idx, val_idx, test_idx, args, device, RunDa
         tr_pred = out[data.train_mask].squeeze(-1)
         cont_loss = contrastive_loss(tr_tar, tr_pred, device, m=3)
         loss = cont_loss + args.reg1 * hsic_loss + args.reg2 * wei_loss
+        print(cont_loss.item(), hsic_loss.item(), wei_loss.item())
         loss.backward()
         optimizer.step()
 

@@ -30,7 +30,6 @@ class GeoMRGNNLayer(MessagePassing):
         # Relation-specific transformation
         edge_type = edge_type.long()  # Ensure edge_type is long for indexing
         msg_emb = torch.empty(x_j.size(0), self.h_dim, device=x_j.device, dtype=x_j.dtype)
-
         for r in range(self.num_relations):
             mask = edge_type == r
             mask = mask.squeeze(-1)
@@ -41,8 +40,7 @@ class GeoMRGNNLayer(MessagePassing):
         return out
 
     def update(self, aggr_out):
-        # Placeholder for additional updates if needed
-        return aggr_out
+        return aggr_out # Placeholder for additional updates if needed
 
 
 class MultiRelationGNN(nn.Module):
@@ -52,8 +50,8 @@ class MultiRelationGNN(nn.Module):
         self.feature_d = in_dim
         self.field_mlp = nn.Linear(in_dim, h_dim)
 
-        self.gat_conv1 = GATConv(in_dim, h_dim, add_self_loops=False)
-        self.gat_conv2 = GATConv(h_dim, h_dim, add_self_loops=False)
+        self.gat_conv1 = GATConv(in_dim, h_dim, add_self_loops=True)
+        self.gat_conv2 = GATConv(h_dim, h_dim, add_self_loops=True)
 
         self.geonn_l1 = GeoMRGNNLayer(in_dim, h_dim, num_relations)
         self.geonn_l2 = GeoMRGNNLayer(h_dim, h_dim, num_relations)
@@ -91,11 +89,9 @@ class MultiRelationGNN(nn.Module):
         out = self.out_all(torch.cat([foc_emb, nei_emb, mr_emb1, mr_emb2], dim=-1))
 
         if self.training:
-            # hsic_loss = self.dev_fnorm(emb_list[0], emb_list[1]) + self.dev_fnorm(emb_list[0], emb_list[2])
-            # + self.dev_fnorm(emb_list[1], emb_list[2])
-            hsic_loss = 0
+            hsic_loss = self.dev_fnorm(nei_emb, mr_emb1) + self.dev_fnorm(nei_emb, mr_emb2)
             #hsic_loss = self.hsic_rff(nei_emb, mr_emb1, self.feature_d).view(1) + self.hsic_rff(nei_emb, mr_emb2, self.feature_d).view(1) 
-            hsic_loss = self.hsic_rff(foc_emb, mr_emb1, self.feature_d).view(1) + self.hsic_rff(foc_emb, mr_emb2, self.feature_d).view(1) 
+            #hsic_loss = self.hsic_rff(foc_emb, mr_emb1, self.feature_d).view(1) + self.hsic_rff(foc_emb, mr_emb2, self.feature_d).view(1) 
 
             z = foc_emb  # 节点自身特征 [N, h_dim]
             row, col = edge_index
