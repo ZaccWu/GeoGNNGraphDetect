@@ -76,7 +76,6 @@ def train_eval_fold(data_base, train_idx, val_idx, test_idx, args, device, RunDa
 
         cont_loss = contrastive_loss(tr_tar, tr_pred, device, m=3)
 
-
         co_loss = class_orthloss(foc_emb[data.train_mask], tr_tar) + class_orthloss(nei_emb[data.train_mask], tr_tar) 
         + class_orthloss(mr_emb1[data.train_mask], tr_tar) + class_orthloss(mr_emb2[data.train_mask], tr_tar)
 
