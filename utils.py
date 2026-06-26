@@ -32,3 +32,21 @@ def class_orthloss(emb, labels):
     co_loss = torch.trace(C_norm @ C_anom) / (H0.size(0) * H1.size(0))
 
     return co_loss
+
+# def alignment_loss(proj_list, labels): ## TODO：目前这个alignment loss似乎没什么用，可以去掉
+#     normal_mask = (labels == 0)
+#     if normal_mask.sum() == 0:
+#         return torch.tensor(0.0)
+#     loss = 0.0
+#     count = 0
+#     for i in range(len(proj_list)):
+#         for j in range(i+1, len(proj_list)):
+#             zi = F.normalize(proj_list[i][normal_mask], dim=-1)  # 确保归一化
+#             zj = F.normalize(proj_list[j][normal_mask], dim=-1)
+#             # 使用平方欧氏距离（天然非负）
+#             # loss += ((zi - zj)**2).sum(dim=-1).mean()
+#             # 或 1 - cos
+#             cos_sim = (zi * zj).sum(dim=-1)
+#             loss += (1 - cos_sim).mean()
+#             count += 1
+#     return loss / count if count > 0 else torch.tensor(0.0)

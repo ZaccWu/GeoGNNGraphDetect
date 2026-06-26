@@ -32,10 +32,10 @@ def get_args():
     parser.add_argument('--model_name', type=str, help='train model', default='gagnn')
     parser.add_argument('--gid', type=int, help='graph id', default=1)
     # training par
-    parser.add_argument('--reg', type=float, help='hsic reg', default=1)
+    parser.add_argument('--reg', type=float, help='hsic reg', default=0.01)
 
     parser.add_argument('--gpu', type=int, help='gpu', default=0)
-    parser.add_argument('--n_epoch', type=int, help='number of epochs', default=100)
+    parser.add_argument('--n_epoch', type=int, help='number of epochs', default=200)
     parser.add_argument('--lr', type=float, help='learning rate', default=1e-3)
     parser.add_argument('--spe', type=int, help='save per epoch', default=10)
     parser.add_argument('--seed', type=int, help='random seed', default=101)
@@ -79,8 +79,7 @@ def train_eval_fold(data_base, train_idx, val_idx, test_idx, args, device, RunDa
         co_loss = class_orthloss(foc_emb[data.train_mask], tr_tar) + class_orthloss(nei_emb[data.train_mask], tr_tar) 
         + class_orthloss(mr_emb1[data.train_mask], tr_tar) + class_orthloss(mr_emb2[data.train_mask], tr_tar)
 
-
-        loss = cont_loss + args.reg * co_loss
+        loss = cont_loss + args.reg1 * co_loss
         #print(cont_loss.item(), co_loss.item())
         loss.backward()
         optimizer.step()
