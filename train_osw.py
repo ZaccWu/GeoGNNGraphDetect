@@ -7,7 +7,7 @@ from torch_geometric.data import Data, DataLoader
 import argparse
 import warnings
 warnings.filterwarnings("ignore")
-from model_geo import *
+from model_geo_osw import *
 from GeoGData import *
 from utils import *
 

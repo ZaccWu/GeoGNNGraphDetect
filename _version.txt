@@ -1,0 +1,4 @@
+train_osw.py: HSIC+样本加权（261016 variants，TPAMI2024）
+
+曾经尝试：
+MMOE架构：MoEGAD用VAE生成伪标签+MMoE架构（233031 variants，TPAMI2026）
