@@ -1,5 +1,14 @@
 
 
+
+
+* train_osw.py: HSIC+样本加权sample_weight（261016 variants，TPAMI2024）
+* train_bm.py: 基本benchmark模型
+GAT
+GIN
+EGConv-2022-Do We Need Anisotropic Graph Neural Networks?
+RGATConv-2019-Relational Graph Attention Networks
+
+
 曾经尝试：
-MMOE架构：MoEAD用VAE生成伪标签+MMoE架构（233031 variants，注意这个是图级而不是节点级的，TPAMI2026）
-train_osw.py: HSIC+样本加权sample_weight（261016 variants，TPAMI2024）
+* MMOE架构：MoEAD用VAE生成伪标签+MMoE架构（233031 variants，注意这个是图级而不是节点级的，TPAMI2026）

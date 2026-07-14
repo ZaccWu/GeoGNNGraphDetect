@@ -67,6 +67,7 @@ def train_eval_fold(data_base, train_idx, val_idx, test_idx, args, device, RunDa
         model.train()
         model.training = True
         tr_tar = data.y[data.train_mask]                 # 所有训练标签
+        
         total_loss = 0.0
         optimizer.zero_grad()
         out, hsic_loss, wei_loss = model(data.x, data.edge_index, data.edge_type)

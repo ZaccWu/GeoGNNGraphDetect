@@ -28,7 +28,7 @@ def get_args():
     parser = argparse.ArgumentParser('Geometric-Aware Graph Neural Network')
     # model par
     # task parameter
-    parser.add_argument('--model_name', type=str, help='train model', default='rd') # rd，gat, gin
+    parser.add_argument('--model_name', type=str, help='train model', default='egc') # rd，gat, gin, rgat, egc
     parser.add_argument('--gid', type=int, help='graph id', default=1)
 
     parser.add_argument('--gpu', type=int, help='gpu', default=0)
@@ -64,6 +64,10 @@ def train_eval_fold(data_base, train_idx, val_idx, test_idx, args, device, RunDa
         model = GAT(in_dim=RunData.num_features, out_dim=RunData.target_types, num_relations=RunData.edge_types).to(device)
     elif args.model_name == 'gin':
         model = GIN(in_dim=RunData.num_features, out_dim=RunData.target_types, num_relations=RunData.edge_types).to(device)
+    elif args.model_name == 'rgat':
+        model = RGAT(in_dim=RunData.num_features, out_dim=RunData.target_types, num_relations=RunData.edge_types).to(device)
+    elif args.model_name == 'egc':
+        model = EGC(in_dim=RunData.num_features, out_dim=RunData.target_types, num_relations=RunData.edge_types).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
     max_val_auc = -np.inf
