@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.nn import MessagePassing
-from torch_geometric.nn import GATConv, GCNConv
+from torch_geometric.nn import GATConv, GINConv
 
 
 class GAT(nn.Module):
@@ -23,19 +23,16 @@ class GAT(nn.Module):
         return out
 
 
-class GCN(nn.Module):
+class GIN(nn.Module):
     def __init__(self, in_dim, out_dim, num_relations, h_dim=8):
         super().__init__()
-        self.dropout = 0.5
-        self.gatconv_1 = GCNConv(in_dim, h_dim, dropout=self.dropout)
-        self.gatconv_2 = GCNConv(h_dim, h_dim, dropout=self.dropout)
+        self.ginconv_1 = GINConv(nn.Linear(in_dim, h_dim))
+        self.ginconv_2 = GINConv(nn.Linear(h_dim, h_dim))
         self.linear = nn.Linear(h_dim, 1)
         self.act = nn.LeakyReLU()
 
     def forward(self, x, edge_index, edge_type):
-        x = F.dropout(x, self.dropout, training=self.training)
-        x1 = self.gatconv_1(x, edge_index)
-        x1 = F.dropout(x1, self.dropout, training=self.training)
-        x2 = self.gatconv_2(x1, edge_index)
+        x1 = self.ginconv_1(x, edge_index)
+        x2 = self.ginconv_2(x1, edge_index)
         out = self.act(self.linear(x2))  # x3: (batch*num_stock, hidden)
         return out
