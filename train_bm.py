@@ -28,7 +28,7 @@ def get_args():
     parser = argparse.ArgumentParser('Geometric-Aware Graph Neural Network')
     # model par
     # task parameter
-    parser.add_argument('--model_name', type=str, help='train model', default='gin') # gat, gin
+    parser.add_argument('--model_name', type=str, help='train model', default='rd') # rd，gat, gin
     parser.add_argument('--gid', type=int, help='graph id', default=1)
 
     parser.add_argument('--gpu', type=int, help='gpu', default=0)
@@ -39,6 +39,16 @@ def get_args():
     return parser.parse_args()
 
 def train_eval_fold(data_base, train_idx, val_idx, test_idx, args, device, RunData):
+    if args.model_name == 'rd':
+        random_pred = torch.rand(data.num_nodes, device=device)
+        ts_pred, ts_tar = random_pred[test_idx], data.y[test_idx]
+        ts_auc = roc_auc_score(ts_tar.cpu().numpy(), ts_pred.cpu().numpy())
+        ts_auprc = average_precision_score(ts_tar.cpu().numpy(), ts_pred.cpu().numpy())
+        threshold = torch.quantile(ts_pred, 0.98)
+        ts_rec = transfer_pred(ts_pred, threshold)
+        class_rep = classification_report(ts_tar.cpu().numpy(), ts_rec.cpu().numpy(), output_dict=True)
+        return {'auc': ts_auc, 'pr-auc': ts_auprc, 'rec': class_rep['1']['recall'], 'prec': class_rep['1']['precision'], 'f1': class_rep['1']['f1-score']}
+
     # 深拷贝数据并设置mask（避免污染原始数据）
     data.train_mask = torch.zeros(data.num_nodes, dtype=torch.bool, device=device)
     data.val_mask   = torch.zeros(data.num_nodes, dtype=torch.bool, device=device)
@@ -46,6 +56,8 @@ def train_eval_fold(data_base, train_idx, val_idx, test_idx, args, device, RunDa
     data.train_mask[train_idx] = True
     data.val_mask[val_idx]     = True
     data.test_mask[test_idx]   = True
+
+
 
     # load model
     if args.model_name == 'gat':
