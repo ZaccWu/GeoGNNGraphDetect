@@ -33,6 +33,8 @@ def get_args():
     # task parameter# rd，gat, gin, rgat, egc
     parser.add_argument('--model_name', type=str, help='train model', default='gcl') 
     parser.add_argument('--gid', type=int, help='graph id', default=1)
+    # eval par
+    parser.add_argument('--rcl', type=float, help='recall rate', default=0.98)
 
     parser.add_argument('--gpu', type=int, help='gpu', default=0)
     parser.add_argument('--n_epoch', type=int, help='number of epochs', default=100)
@@ -190,7 +192,7 @@ def train_eval_fold_gcl(data, train_idx, val_idx, test_idx, args, device, RunDat
                     ts_auc = roc_auc_score(test_label, test_pred_prob)
                     ts_auprc = average_precision_score(test_label, test_pred_prob)
                     # Recall@1（取98%分位数）
-                    threshold = np.quantile(test_pred_prob, 0.98)
+                    threshold = np.quantile(test_pred_prob, args.rcl)
                     ts_pred_bin = (test_pred_prob >= threshold).astype(int)
                     from sklearn.metrics import classification_report
                     rep = classification_report(test_label, ts_pred_bin, output_dict=True)

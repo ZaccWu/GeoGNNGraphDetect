@@ -4,7 +4,8 @@ from sklearn.metrics import classification_report
 from sklearn.metrics import roc_auc_score, average_precision_score
 from sklearn.model_selection import KFold, train_test_split
 from torch_geometric.data import Data, DataLoader
-
+import matplotlib.pyplot as plt
+import os
 import argparse
 import warnings
 warnings.filterwarnings("ignore")
@@ -31,6 +32,8 @@ def get_args():
     # task parameter
     parser.add_argument('--model_name', type=str, help='train model', default='gagnn')
     parser.add_argument('--gid', type=int, help='graph id', default=1)
+    # eval par
+    parser.add_argument('--rcl', type=float, help='recall rate', default=0.98)
     # training par
     parser.add_argument('--reg', type=float, help='hsic reg', default=0.01)
 
@@ -107,7 +110,7 @@ def train_eval_fold(data_base, train_idx, val_idx, test_idx, args, device, RunDa
                     ts_auprc = average_precision_score(ts_tar.cpu().numpy(), ts_pred.cpu().numpy())
 
                     # 计算Recall@1（前2%阈值）
-                    threshold = torch.quantile(ts_pred, 0.98, dim=None, keepdim=False)
+                    threshold = torch.quantile(ts_pred, args.rcl, dim=None, keepdim=False)
                     ts_rec = transfer_pred(ts_pred, threshold)
                     class_rep = classification_report(ts_tar.cpu().numpy(), ts_rec.cpu().numpy(), output_dict=True)
                     ts_rec1 = class_rep['1']['recall']

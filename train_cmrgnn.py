@@ -25,6 +25,9 @@ def set_seed(seed):
 def get_args():
     parser = argparse.ArgumentParser('CMR-GNN for Fraud Detection')
     parser.add_argument('--gid', type=int, help='graph id', default=1)
+    # eval par
+    parser.add_argument('--rcl', type=float, help='recall rate', default=0.98)
+
     parser.add_argument('--gpu', type=int, help='gpu', default=0)
     parser.add_argument('--n_epoch', type=int, default=100)
     parser.add_argument('--lr', type=float, default=1e-3)
@@ -203,7 +206,7 @@ def train_eval_fold(data, train_idx, val_idx, test_idx, args, device, RunData):
                 test_label = data.y[data.test_mask].cpu().numpy()
                 ts_auc = roc_auc_score(test_label, test_prob)
                 ts_auprc = average_precision_score(test_label, test_prob)
-                th = np.quantile(test_prob, 0.98)
+                th = np.quantile(test_prob, args.rcl)
                 pred_bin = (test_prob >= th).astype(int)
                 rep = classification_report(test_label, pred_bin, output_dict=True, zero_division=0)
                 best_res = {

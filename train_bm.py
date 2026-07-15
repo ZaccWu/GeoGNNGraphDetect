@@ -30,6 +30,8 @@ def get_args():
     # task parameter
     parser.add_argument('--model_name', type=str, help='train model', default='egc') # rd，gat, gin, rgat, egc
     parser.add_argument('--gid', type=int, help='graph id', default=1)
+    # eval par
+    parser.add_argument('--rcl', type=float, help='recall rate', default=0.98)
 
     parser.add_argument('--gpu', type=int, help='gpu', default=0)
     parser.add_argument('--n_epoch', type=int, help='number of epochs', default=100)
@@ -44,7 +46,7 @@ def train_eval_fold(data_base, train_idx, val_idx, test_idx, args, device, RunDa
         ts_pred, ts_tar = random_pred[test_idx], data.y[test_idx]
         ts_auc = roc_auc_score(ts_tar.cpu().numpy(), ts_pred.cpu().numpy())
         ts_auprc = average_precision_score(ts_tar.cpu().numpy(), ts_pred.cpu().numpy())
-        threshold = torch.quantile(ts_pred, 0.98)
+        threshold = torch.quantile(ts_pred, args.rcl)
         ts_rec = transfer_pred(ts_pred, threshold)
         class_rep = classification_report(ts_tar.cpu().numpy(), ts_rec.cpu().numpy(), output_dict=True)
         return {'auc': ts_auc, 'pr-auc': ts_auprc, 'rec': class_rep['1']['recall'], 'prec': class_rep['1']['precision'], 'f1': class_rep['1']['f1-score']}
@@ -110,7 +112,7 @@ def train_eval_fold(data_base, train_idx, val_idx, test_idx, args, device, RunDa
                     ts_auprc = average_precision_score(ts_tar.cpu().numpy(), ts_pred.cpu().numpy())
 
                     # 计算Recall@1（前2%阈值）
-                    threshold = torch.quantile(ts_pred, 0.98, dim=None, keepdim=False)
+                    threshold = torch.quantile(ts_pred, args.rcl, dim=None, keepdim=False)
                     ts_rec = transfer_pred(ts_pred, threshold)
                     class_rep = classification_report(ts_tar.cpu().numpy(), ts_rec.cpu().numpy(), output_dict=True)
                     ts_rec1 = class_rep['1']['recall']
