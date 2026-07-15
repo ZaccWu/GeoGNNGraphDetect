@@ -79,7 +79,7 @@ def train_eval_fold(data_base, train_idx, val_idx, test_idx, args, device, RunDa
         co_loss = class_orthloss(foc_emb[data.train_mask], tr_tar) + class_orthloss(nei_emb[data.train_mask], tr_tar) 
         + class_orthloss(mr_emb1[data.train_mask], tr_tar) + class_orthloss(mr_emb2[data.train_mask], tr_tar)
 
-        loss = cont_loss + args.reg1 * co_loss
+        loss = cont_loss + args.reg * co_loss
         #print(cont_loss.item(), co_loss.item())
         loss.backward()
         optimizer.step()
